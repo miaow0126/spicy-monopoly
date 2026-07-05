@@ -1630,8 +1630,9 @@ def _cli():
         if r.get("task"): print(f"🎯 加餐任务:{r['task']['内容']}")
     elif cmd == "mark":    print(g.guess_mark(args[1], args[2]))
     elif cmd == "persona": print(g.declare_persona(args[1], " ".join(args[2:])))
+    elif cmd == "reroll_id": print(g.reroll_identity(args[1]))
     else:
-        print('命令: new "名:性别:攻受" "名:性别:攻受" [红线] | roll [大/小] | done | buyout | buy | pay | duel <赢家> | card <序号> | status | result')
+        print('命令: new "名:性别:攻受" "名:性别:攻受" [红线] | roll [大/小] | done | swap | buyout | buy | pay | duel <赢家> | card <序号> | discard <序号> | reroll_id <名字> | status | result')
         print('       身份钩子: idevent <who> <first_climax/say_banned/no_kiss_2turns> | extra <who> | mark <猜的人> <部位> | persona <who> <背德身份>')
         return
     g.save(STATE)
