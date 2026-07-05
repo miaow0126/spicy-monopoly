@@ -1112,7 +1112,7 @@ class Game:
                     out["identity_reminder"] = self._identity_reminder()
                 else:                                     # 身份还新(<3轮)·默认保留·可选主动换(绳师没玩进去就被换走)
                     self._chance_swap_offer = who
-                    out["say"] = f"🎲 {who} 掷 {d} → 第{new}格 · 🎴抽卡 → {card['name']} | 身份【{cur_id}】才玩了{tenure}轮·默认保留(想换:下一轮 body 带 swap_identity=true)"   # 换身份后当场刷新提醒(治慢一拍·荷官照旧的演错一轮)
+                    out["say"] = f"🎲 {who} 掷 {d} → 第{new}格 · 🎴抽卡 → {card['name']} | 身份【{cur_id}】才玩了{tenure}轮·默认保留(想换:下一轮换身份时说一声)"   # 换身份后当场刷新提醒(治慢一拍·荷官照旧的演错一轮)
 
         elif kind == "start":
             out["say"] = f"🎲 {who} 掷 {d} → 🏁起点,+2币(现{self.coins[who]})"
@@ -1538,9 +1538,10 @@ def _cli():
     cmd = args[0] if args else "help"
 
     if cmd == "new":
-        # new "Alice:男:攻" "Bob:女:受" [强度light/medium/heavy] [反转0~1] [回合数,如 12/18/24] [红线逗号,如 anal,pain]
+        # new "Alice:男:攻" "Bob:女:受" [强度light/medium/heavy] [反转0~1] [回合数12/18/24] [红线逗号anal,pain] [开肛=名字] [纯top=名字] [身份=off/mixed/nsfw_only] [先手=名字]
         p1 = args[1].split(":"); p2 = args[2].split(":")
         flavor = "medium"; reverse = 0.3; redline = []; no_anal = []; open_anal = []; no_pen = []; game_length = None
+        identity_mode = "mixed"; first_player = ""
         for extra in args[3:]:
             if extra in ("light", "medium", "heavy"):
                 flavor = extra
@@ -1554,17 +1555,31 @@ def _cli():
                 open_anal = extra.split("=", 1)[1].split(",")   # 后庭默认关·这些人开局开
             elif extra.startswith("纯top=") or extra.startswith("nopen="):
                 no_pen = extra.split("=", 1)[1].split(",")   # 这些人当纯top·任何孔都不被插(女女局)
+            elif extra.startswith("身份=") or extra.startswith("id="):
+                identity_mode = extra.split("=", 1)[1]        # 身份三档:off不发/mixed全池(默认)/nsfw_only只发NSFW
+            elif extra.startswith("先手=") or extra.startswith("first="):
+                first_player = extra.split("=", 1)[1]         # 谁先掷骰(默认p1先手)·想让AI/某人先手填ta名字
             else:
                 redline = extra.split(",")
+        if identity_mode not in ("off", "mixed", "nsfw_only"):
+            print(f"❌ 身份模式只能是 off/mixed/nsfw_only,收到「{identity_mode}」。"); return
         sx = {p1[1], p2[1]}
         lineup = "男男" if sx == {"男"} else ("女女" if sx == {"女"} else "男女")
         g = Game(lineup=lineup, flavor=flavor, reverse_chance=reverse,
                  p1_name=p1[0], p1_sex=p1[1], p1_role=p1[2],
                  p2_name=p2[0], p2_sex=p2[1], p2_role=p2[2],
-                 redline=redline, no_receive_anal=no_anal, open_anal=open_anal, no_penetration=no_pen, recent_tasks=load_seen(SEEN_F),
-                 game_length=game_length)
+                 redline=redline, no_receive_anal=no_anal, open_anal=open_anal, no_penetration=no_pen,
+                 recent_tasks=load_seen(SEEN_F), identity_mode=identity_mode, game_length=game_length)
+        if first_player:                                   # 谁先掷(默认p1)·想让AI/某人先手填ta名字
+            if first_player not in (p1[0], p2[0]):
+                print(f"❌ 先手必须是「{p1[0]}」或「{p2[0]}」之一(想让谁先掷填谁的名字)。"); return
+            g.turn = first_player
         g.save(STATE)
-        print(f"✅ 开局!{p1[0]}({p1[1]}·{p1[2]}) vs {p2[0]}({p2[1]}·{p2[2]}) · {flavor}盘 · {g.total_rounds}回合 · 反转{reverse} · 红线:{redline or '无'} · 禁肛:{no_anal or '无'}")
+        # ★开局把「实际生效」的安全设置回显一遍(念给人类确认·防「以为禁了其实没设上」)——读引擎真值不是回显输入
+        _opened = [n for n, v in g.receive_anal.items() if v]
+        _puretop = [n for n, v in g.receive_pen.items() if not v]
+        print(f"✅ 开局!{p1[0]}({p1[1]}·{p1[2]}) vs {p2[0]}({p2[1]}·{p2[2]}) · {flavor}盘 · {g.total_rounds}回合 · 反转{reverse}")
+        print(f"   🔒 安全(念给人类确认):红线={redline or '无'} · 后庭开={_opened or '两人都关'} · 纯top={_puretop or '无'} · 身份={identity_mode} · 先手={g.turn}")
         print(g.board_art())
         print("\n每回合就敲一条: python monopoly_play.py roll")
         return
@@ -1587,8 +1602,10 @@ def _cli():
     if cmd == "roll":
         if g.is_over():
             print("🏁 游戏已结束。"); print(g.final_result()); return
-        guess = args[1] if len(args) > 1 and args[1] in ("大", "小") else None   # 🎰赌徒押大小
-        r = g.roll(guess=guess)
+        rest = args[1:]
+        guess = next((a for a in rest if a in ("大", "小")), None)   # 🎰赌徒押大小
+        swap_id = any(a in ("换身份", "swapid", "swap_id") for a in rest)   # 身份任期保护:上轮机会格【保留】了新身份·这轮改主意换掉
+        r = g.roll(guess=guess, swap_identity=swap_id)
         print(r["say"]); print(r["board"])
         t = r.get("task")
         if r.get("duel"):
@@ -1632,7 +1649,8 @@ def _cli():
     elif cmd == "persona": print(g.declare_persona(args[1], " ".join(args[2:])))
     elif cmd == "reroll_id": print(g.reroll_identity(args[1]))
     else:
-        print('命令: new "名:性别:攻受" "名:性别:攻受" [红线] | roll [大/小] | done | swap | buyout | buy | pay | duel <赢家> | card <序号> | discard <序号> | reroll_id <名字> | status | result')
+        print('命令: new "名:性别:攻受" "名:性别:攻受" [强度] [反转] [回合数] [红线] [开肛=名字] [纯top=名字] [身份=off/mixed/nsfw_only] [先手=名字]')
+        print('       roll [大/小] [换身份] | done | swap | buyout | buy | pay | duel <赢家> | card <序号> | discard <序号> | reroll_id <名字> | status | result')
         print('       身份钩子: idevent <who> <first_climax/say_banned/no_kiss_2turns> | extra <who> | mark <猜的人> <部位> | persona <who> <背德身份>')
         return
     g.save(STATE)

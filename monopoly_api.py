@@ -57,7 +57,7 @@ class NewGameRequest(BaseModel):
     no_penetration: list[str] = []       # ★当纯top的人名·任何孔[阴道+后穴]都不被插。给「女女局想当纯top」用(禁后庭挡不住阴道)。不填=都可被插。
     theme: Optional[str] = None
     reverse_chance: float = 0.3
-    identity_mode: str = "mixed"         # 身份三档:off(不发)/mixed(30全池·默认)/nsfw_only(只发NSFW14)
+    identity_mode: str = "mixed"         # 身份三档:off(不发)/mixed(35全池·默认)/nsfw_only(只发NSFW20)
     game_length: Optional[int] = None    # 局长(总回合数):速玩12/正常18/超长24(不传=24)。escalate曲线按局长自适应(短局爬得陡)
     player_token: Optional[str] = None   # 鉴权令牌(删局/看局);去重不靠它
     pair_code: str = ""                  # 暗号:撞名了不用改名·加个独特暗号就跟别人分开(默认空·同名字+性别自动认)
