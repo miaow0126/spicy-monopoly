@@ -239,7 +239,8 @@ function slimData(data, context = {}) {
     "action_needed", "hint", "next_turn", "identity_reminder",
     "feedback_prompt", "pair_history_key",
     "games_played", "tasks_remembered", "current_game_tasks", "dedup",
-    "base_url", "flow",
+    "base_url", "flow", "host_guide", "setup_questions", "safety_rules",
+    "turn_loop", "action_map", "mcp_resources",
   ];
   for (const key of copyKeys) {
     if (data[key] !== undefined && data[key] !== null && data[key] !== "") slim[key] = data[key];
@@ -334,8 +335,52 @@ const identityEvents = ["first_climax", "say_banned", "no_kiss_2turns"];
 const infoQueries = ["state", "shop", "list_games", "pair_history"];
 const adminActions = ["delete_game", "clear_pair_history", "submit_feedback"];
 const feedbackKinds = ["bug", "idea", "feedback"];
+const setupQuestions = [
+  "Before new_game, explain: two-player board game, take turns rolling on a 20-tile board, do tasks to earn coins/territory, highest coins wins final command.",
+  "Ask and confirm: player names, sex 男/女, role 攻/受, flavor light/medium/heavy, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, first_player.",
+  "Tell players: coins come from tasks and passing start; completed tasks claim territory; stepping on opponent territory means pay toll or serve.",
+  "Tell players: role reversal is an intentional surprise; set reverse_chance=0 if they do not want it.",
+];
+const safetyRules = [
+  "Safety word 404: stop immediately, do not ask for justification.",
+  "Players may skip any unwanted task for free: game_action action=skip with game_id and who.",
+  "Players may swap an unwanted task before the next roll: game_action action=swap with game_id and who; costs 1 coin, limited uses.",
+  "After new_game, read active_limits/history_note/identity_reminder and the board to players before the first roll.",
+];
+const turnLoop = [
+  "Call roll with game_id only; never pass a player name to roll.",
+  "Show the full board every turn unless players explicitly say not to.",
+  "Read say/hint/task/truth/toll/duel/card/mystery to players and follow action_needed.",
+  "Do not rush. Wait for players to say continue/next/ready before the next roll.",
+  "If a task does not fit the current scene, preserve its strength/core kink and adapt it, or use game_action action=swap.",
+  "Never invent dice, tasks, coins, winners, hidden marks, or state. If unsure or error, say so and call game_info query=state.",
+];
+const actionMap = {
+  skip: "game_action {action:'skip', game_id, who}",
+  swap: "game_action {action:'swap', game_id, who}",
+  done: "game_action {action:'done', game_id, who}",
+  toll: "roll settlement toll='pay' or toll='serve', or game_action action='pay_toll'",
+  duel: "game_action {action:'duel_result', game_id, winner}",
+  final: "game_action {action:'final_result', game_id}",
+  cards: "game_action action='buy_card'/'use_card'/'discard_card', with who and index when needed",
+  identity: "game_action action='reroll_identity'/'id_event'/'extra_task'/'guess_mark'/'declare_persona'",
+};
+const mcpResources = [
+  "spicy-monopoly://manual/ai",
+  "spicy-monopoly://manual/human",
+  "spicy-monopoly://manual/api",
+  "spicy-monopoly://readme",
+];
+const newGameHostGuide = [
+  "You are the host and a participant, not just a tool caller. Use the engine for state, then roleplay only your own side.",
+  "Before first roll, tell players the coin/territory win condition, role reversal rule, safety word 404, skip/swap options, and identity reroll option.",
+  "Read active_limits, history_note, identity_reminder, and board from this new_game result to players.",
+  "Every turn: call roll(game_id), paste board, read task/hint/action_needed, wait for players before rolling again.",
+  "If anyone refuses/stops/says redline/404, use skip or stop immediately; do not argue.",
+  "Never invent hidden state. On errors, show the parameter error and retry with corrected args.",
+];
 const newGameDescription = [
-  "Start a new two-player game. Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
+  "Start a new two-player game. Before calling, introduce the rules and ask setup/safety questions; call monopoly_help for the host guide if needed. Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
   "Allowed values: lineup=男女/男男/女女 (also accepts mf/mm/ff or male-female); p*_sex=男/女 (also accepts male/female/m/f); p*_role=攻/受 (also accepts top/bottom); flavor=light/medium/heavy; identity_mode=off/mixed/nsfw_only.",
   "Optional setup: redline, open_anal, no_receive_anal, no_penetration are string arrays; game_length is integer 4-60; reverse_chance is 0-1.",
   "Do not invent game_id. Use the returned game_id for roll/game_action/game_info. Bad parameters return an explicit 参数错误 message.",
@@ -361,13 +406,19 @@ const adminDescription = [
 
 tool("monopoly_help", {
   title: "玩法与 MCP 帮助",
-  description: "查看当前 MCP 接到哪个 API，以及推荐的工具调用流程。",
+  description: "MUST call this before hosting a game. Returns the compressed host manual: setup questions, safety rules, turn loop, MCP actions, and resource URIs for the full manuals.",
   annotations: { readOnlyHint: true, openWorldHint: true },
 }, async () => ({
   base_url: BASE_URL,
+  setup_questions: setupQuestions,
+  safety_rules: safetyRules,
+  turn_loop: turnLoop,
+  action_map: actionMap,
+  mcp_resources: mcpResources,
   flow: [
-    "Call new_game first. Read active_limits and history_note to players.",
-    "Call roll for each turn. If the previous turn had pending work, pass task/toll/super_action/duel_winner in the next roll.",
+    "First explain the game, ask setup/safety questions, then call new_game.",
+    "Read active_limits, history_note, identity_reminder, and board to players.",
+    "Call roll for each turn. If the previous turn had pending work, pass task/toll/super_action/duel_winner only when the result asks for it.",
     "Use game_action for side actions such as skip, swap, duel_result, cards, identity events, or final_result.",
     "Use game_info for read-only state/shop/list/history queries.",
     "Use game_admin only for delete, clear history, or voluntary feedback.",
@@ -417,7 +468,10 @@ tool("new_game", {
   numberParam(args, "reverse_chance", { min: 0, max: 1 });
   numberParam(args, "game_length", { min: 4, max: 60, int: true });
   booleanParam(args, "reset_blocklist");
-  return request("POST", "/new_game", args);
+  return request("POST", "/new_game", args).then((data) => ({
+    ...data,
+    host_guide: newGameHostGuide,
+  }));
 });
 
 tool("roll", {
@@ -598,7 +652,7 @@ tool("game_admin", {
 });
 
 const manualFiles = [
-  ["spicy-monopoly://manual/ai", "monopoly-给AI的操作手册.md", "给 AI 荷官/玩家的操作手册"],
+  ["spicy-monopoly://manual/ai", "monopoly-给AI的操作手册.md", "完整荷官手册：开局说明、安全规则、回合节奏、身份/红线"],
   ["spicy-monopoly://manual/api", "monopoly-API使用手册.md", "HTTP API 使用手册"],
   ["spicy-monopoly://manual/human", "monopoly-怎么玩-人类版.md", "给人类玩家的玩法简介"],
   ["spicy-monopoly://readme", "README.md", "项目 README"],
@@ -620,7 +674,7 @@ for (const [uri, file, title] of manualFiles) {
 
 server.registerPrompt("start_spicy_monopoly", {
   title: "开始一局色色大富翁",
-  description: "A reusable host prompt that reminds the AI to use MCP tools instead of improvising game state.",
+  description: "Host prompt that tells the AI to read monopoly_help/manual rules before using MCP tools.",
   argsSchema: {
     player_names: z.string().optional().describe("Optional player names or setup preferences."),
   },
@@ -631,9 +685,10 @@ server.registerPrompt("start_spicy_monopoly", {
       type: "text",
       text: [
         "Use the Spicy Monopoly MCP tools to run the game. Do not invent dice rolls, tasks, coins, winners, or hidden mark positions.",
-        "First call monopoly_help if you need the flow, then call new_game with the players' setup.",
-        "Read active_limits and history_note back to the players before the first roll.",
-        "For each turn, call roll and follow its hint/action_needed fields.",
+        "First call monopoly_help and follow its setup_questions, safety_rules, turn_loop, and action_map. If resources are available, read spicy-monopoly://manual/ai.",
+        "Before new_game, explain the coin/territory win condition, role reversal, safety word 404, skip/swap options, and ask setup/redlines.",
+        "After new_game, read active_limits, history_note, identity_reminder, and board back to the players before the first roll.",
+        "For each turn, call roll(game_id only), show board, follow hint/action_needed, then wait for players before rolling again.",
         "If a player says stop, redline, 404, or does not want a task, call game_action with action='skip' immediately without asking them to justify it.",
         player_names ? `Player/setup notes: ${player_names}` : "",
       ].filter(Boolean).join("\n"),
