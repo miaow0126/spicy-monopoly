@@ -100,6 +100,55 @@ function normalizeToolArgs(args) {
   return normalized;
 }
 
+function isBlank(value) {
+  return value === undefined || value === null || value === "";
+}
+
+function formatValue(value) {
+  return typeof value === "string" ? `"${value}"` : JSON.stringify(value);
+}
+
+function invalidParam(name, value, allowed, hint = "") {
+  const suffix = hint ? ` ${hint}` : "";
+  throw new Error(`参数错误: \`${name}\` = ${formatValue(value)} 不支持。可用值: ${allowed.join(", ")}.${suffix}`);
+}
+
+function oneOf(args, name, allowed, { required: mustExist = false, hint = "" } = {}) {
+  const value = args[name];
+  if (isBlank(value)) {
+    if (mustExist) throw new Error(`参数错误: 缺少必填参数 \`${name}\`.`);
+    return undefined;
+  }
+  if (!allowed.includes(value)) invalidParam(name, value, allowed, hint);
+  return value;
+}
+
+function numberParam(args, name, { min, max, int = false } = {}) {
+  if (isBlank(args[name])) return undefined;
+  const value = typeof args[name] === "number" ? args[name] : Number(args[name]);
+  if (!Number.isFinite(value)) throw new Error(`参数错误: \`${name}\` 必须是数字，当前是 ${formatValue(args[name])}.`);
+  if (int && !Number.isInteger(value)) throw new Error(`参数错误: \`${name}\` 必须是整数，当前是 ${formatValue(args[name])}.`);
+  if (min !== undefined && value < min) throw new Error(`参数错误: \`${name}\` 不能小于 ${min}，当前是 ${value}.`);
+  if (max !== undefined && value > max) throw new Error(`参数错误: \`${name}\` 不能大于 ${max}，当前是 ${value}.`);
+  args[name] = value;
+  return value;
+}
+
+function booleanParam(args, name) {
+  if (isBlank(args[name])) return undefined;
+  if (typeof args[name] === "boolean") return args[name];
+  const value = String(args[name]).trim().toLowerCase();
+  if (["true", "1", "yes", "y"].includes(value)) {
+    args[name] = true;
+    return true;
+  }
+  if (["false", "0", "no", "n"].includes(value)) {
+    args[name] = false;
+    return false;
+  }
+  throw new Error(`参数错误: \`${name}\` 必须是 true/false，当前是 ${formatValue(args[name])}.`);
+}
+
 function pairHistoryKey({ p1_name, p1_sex, p2_name, p2_sex, pair_code = "" }) {
   const players = [
     [String(p1_name), String(p1_sex)],
@@ -257,14 +306,34 @@ function registerSpicyMonopoly(server) {
 
 const strArray = z.array(z.string()).default([]);
 const playerName = z.string().min(1);
-const gameId = z.string().min(1).describe("Game id returned by new_game.");
+const gameId = z.string().optional().describe("Game id returned by new_game.");
 const who = z.string().min(1).describe("Player name exactly as used when starting the game.");
-const sexInput = z.enum(["男", "女", "male", "female", "m", "f", "man", "woman", "boy", "girl"])
+const sexInput = z.string()
   .describe("Player sex. Chinese 男/女 preferred; English male/female is accepted.");
-const roleInput = z.enum(["攻", "受", "top", "bottom", "seme", "uke", "dom", "sub", "dominant", "submissive"])
+const roleInput = z.string()
   .describe("Player role. Chinese 攻/受 preferred; English top/bottom is accepted.");
-const lineupInput = z.enum(["男女", "男男", "女女", "mf", "fm", "mm", "ff", "male-female", "female-male", "male-male", "female-female"])
+const lineupInput = z.string()
   .describe("Pair lineup. Chinese 男女/男男/女女 preferred; common English shorthand is accepted.");
+const lineups = ["男女", "男男", "女女"];
+const sexes = ["男", "女"];
+const roles = ["攻", "受"];
+const flavors = ["light", "medium", "heavy"];
+const identityModes = ["off", "mixed", "nsfw_only"];
+const tollActions = ["pay", "serve"];
+const taskActions = ["done", "skip"];
+const superActions = ["done", "buyout"];
+const guesses = ["大", "小"];
+const gameActions = [
+  "final_result",
+  "skip", "swap", "done", "pay_toll", "duel_result", "buyout_super",
+  "buy_card", "use_card", "discard_card", "buy_collectible",
+  "reroll_identity", "reroll_task", "extra_task",
+  "guess_mark", "declare_persona", "id_event",
+];
+const identityEvents = ["first_climax", "say_banned", "no_kiss_2turns"];
+const infoQueries = ["state", "shop", "list_games", "pair_history"];
+const adminActions = ["delete_game", "clear_pair_history", "submit_feedback"];
+const feedbackKinds = ["bug", "idea", "feedback"];
 
 tool("monopoly_help", {
   title: "玩法与 MCP 帮助",
@@ -290,7 +359,7 @@ tool("new_game", {
   description: "Create a new two-player game. The returned game_id is needed for later tools.",
   inputSchema: {
     lineup: lineupInput.default("男女"),
-    flavor: z.enum(["light", "medium", "heavy"]).default("medium"),
+    flavor: z.string().default("medium"),
     p1_name: playerName.default("P1"),
     p1_sex: sexInput.default("男"),
     p1_role: roleInput.default("攻"),
@@ -304,31 +373,51 @@ tool("new_game", {
     open_anal: strArray.describe("Players who explicitly allow receiving anal. Empty means anal is off for both players."),
     no_penetration: strArray.describe("Players who are pure top this game: no penetration of any hole."),
     theme: z.string().optional(),
-    reverse_chance: z.number().min(0).max(1).default(0.3),
-    identity_mode: z.enum(["off", "mixed", "nsfw_only"]).default("mixed"),
-    game_length: z.number().int().min(4).max(60).optional(),
+    reverse_chance: z.union([z.number(), z.string()]).default(0.3),
+    identity_mode: z.string().default("mixed"),
+    game_length: z.union([z.number(), z.string()]).optional(),
     player_token: z.string().optional().describe("Optional owner token for delete/list. Dedup does not rely on it."),
     pair_code: z.string().default("").describe("Optional private code to separate common names without changing displayed names."),
-    reset_blocklist: z.boolean().default(false),
+    reset_blocklist: z.union([z.boolean(), z.string()]).default(false),
     first_player: z.string().default("").describe("Optional exact player name who rolls first."),
   },
   annotations: { destructiveHint: false, openWorldHint: true },
-}, (args) => request("POST", "/new_game", args));
+}, (args) => {
+  oneOf(args, "lineup", lineups, { hint: "也接受 male-female/mf、male-male/mm、female-female/ff，会自动转换。" });
+  oneOf(args, "flavor", flavors);
+  oneOf(args, "p1_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
+  oneOf(args, "p2_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
+  oneOf(args, "p1_role", roles, { required: true, hint: "也接受 top/bottom，会自动转换。" });
+  oneOf(args, "p2_role", roles, { required: true, hint: "也接受 top/bottom，会自动转换。" });
+  oneOf(args, "identity_mode", identityModes);
+  numberParam(args, "reverse_chance", { min: 0, max: 1 });
+  numberParam(args, "game_length", { min: 4, max: 60, int: true });
+  booleanParam(args, "reset_blocklist");
+  return request("POST", "/new_game", args);
+});
 
 tool("roll", {
   title: "掷骰 / 下一轮",
   description: "Roll the current turn. Also settles prior pending task/toll/duel/super decisions.",
   inputSchema: {
     game_id: gameId,
-    toll: z.enum(["pay", "serve"]).optional(),
-    task: z.enum(["done", "skip"]).optional(),
-    super_action: z.enum(["done", "buyout"]).optional(),
+    toll: z.string().optional(),
+    task: z.string().optional(),
+    super_action: z.string().optional(),
     duel_winner: z.string().optional(),
-    guess: z.enum(["大", "小"]).optional(),
-    swap_identity: z.boolean().optional(),
+    guess: z.string().optional(),
+    swap_identity: z.union([z.boolean(), z.string()]).optional(),
   },
   annotations: { destructiveHint: false, openWorldHint: true },
-}, ({ game_id, ...body }) => request("POST", `/roll/${encodeURIComponent(game_id)}`, body));
+}, ({ game_id, ...body }) => {
+  required({ game_id }, "game_id");
+  oneOf(body, "toll", tollActions);
+  oneOf(body, "task", taskActions);
+  oneOf(body, "super_action", superActions);
+  oneOf(body, "guess", guesses);
+  booleanParam(body, "swap_identity");
+  return request("POST", `/roll/${encodeURIComponent(game_id)}`, body);
+});
 
 const pairSchema = {
   p1_name: playerName,
@@ -347,7 +436,7 @@ const optionalPairSchema = {
 
 function required(args, name) {
   if (args[name] === undefined || args[name] === null || args[name] === "") {
-    throw new Error(`${name} is required for ${args.action || args.query}`);
+    throw new Error(`参数错误: 缺少必填参数 \`${name}\`${args.action || args.query ? `，当前操作是 ${args.action || args.query}` : ""}.`);
   }
   return args[name];
 }
@@ -356,24 +445,19 @@ tool("game_action", {
   title: "游戏操作",
   description: "Single compact tool for non-roll gameplay actions: final_result, skip, swap, cards, identity events, mark guessing, etc.",
   inputSchema: {
-    action: z.enum([
-      "final_result",
-      "skip", "swap", "done", "pay_toll", "duel_result", "buyout_super",
-      "buy_card", "use_card", "discard_card", "buy_collectible",
-      "reroll_identity", "reroll_task", "extra_task",
-      "guess_mark", "declare_persona", "id_event",
-    ]),
+    action: z.string().describe(`Action to run. Allowed: ${gameActions.join(", ")}.`),
     game_id: gameId,
     who: z.string().optional().describe("Player name, required by most actions."),
     winner: z.string().optional().describe("Winner name for duel_result."),
     index: z.union([z.string(), z.number()]).optional().describe("Card index or name for use_card/discard_card."),
     spot: z.string().optional().describe("Guessed body spot for guess_mark."),
     persona: z.string().optional().describe("Persona text for declare_persona."),
-    event: z.enum(["first_climax", "say_banned", "no_kiss_2turns"]).optional().describe("Identity event for id_event."),
+    event: z.string().optional().describe(`Identity event for id_event. Allowed: ${identityEvents.join(", ")}.`),
   },
   annotations: { destructiveHint: false, openWorldHint: true },
 }, (args) => {
-  const game = encodeURIComponent(args.game_id);
+  oneOf(args, "action", gameActions, { required: true });
+  const game = encodeURIComponent(required(args, "game_id"));
   const player = () => encodeURIComponent(required(args, "who"));
   switch (args.action) {
     case "final_result":
@@ -409,6 +493,7 @@ tool("game_action", {
     case "declare_persona":
       return request("POST", `/declare_persona/${game}/${player()}`, { persona: required(args, "persona") });
     case "id_event":
+      oneOf(args, "event", identityEvents, { required: true });
       return request("POST", `/id_event/${game}/${player()}/${encodeURIComponent(required(args, "event"))}`);
     default:
       throw new Error(`Unsupported action: ${args.action}`);
@@ -419,13 +504,14 @@ tool("game_info", {
   title: "游戏查询",
   description: "Single read-only tool for state, shop, active game list, and pair history.",
   inputSchema: {
-    query: z.enum(["state", "shop", "list_games", "pair_history"]),
+    query: z.string().describe(`Query to run. Allowed: ${infoQueries.join(", ")}.`),
     game_id: z.string().optional(),
     player_token: z.string().optional(),
     ...optionalPairSchema,
   },
   annotations: { readOnlyHint: true, openWorldHint: true },
 }, async (args) => {
+  oneOf(args, "query", infoQueries, { required: true });
   switch (args.query) {
     case "state":
       return request("GET", `/state/${encodeURIComponent(required(args, "game_id"))}`);
@@ -434,6 +520,10 @@ tool("game_info", {
     case "list_games":
       return request("GET", "/games", undefined, { token: required(args, "player_token") });
     case "pair_history": {
+      required(args, "p1_name");
+      oneOf(args, "p1_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
+      required(args, "p2_name");
+      oneOf(args, "p2_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
       const key = pairHistoryKey(args);
       return { pair_history_key: key, ...(await request("GET", `/seen/${encodeURIComponent(key)}`)) };
     }
@@ -446,20 +536,27 @@ tool("game_admin", {
   title: "管理与反馈",
   description: "Rare admin actions: delete a game, clear pair history, or submit voluntary feedback.",
   inputSchema: {
-    action: z.enum(["delete_game", "clear_pair_history", "submit_feedback"]),
+    action: z.string().describe(`Admin action. Allowed: ${adminActions.join(", ")}.`),
     game_id: z.string().optional(),
     player_token: z.string().optional(),
     text: z.string().optional(),
-    kind: z.enum(["bug", "idea", "feedback"]).default("feedback"),
-    mute: z.boolean().default(false),
+    kind: z.string().default("feedback"),
+    mute: z.union([z.boolean(), z.string()]).default(false),
     ...optionalPairSchema,
   },
   annotations: { destructiveHint: true, openWorldHint: true },
 }, async (args) => {
+  oneOf(args, "action", adminActions, { required: true });
+  oneOf(args, "kind", feedbackKinds);
+  booleanParam(args, "mute");
   switch (args.action) {
     case "delete_game":
       return request("DELETE", `/game/${encodeURIComponent(required(args, "game_id"))}`, undefined, { token: required(args, "player_token") });
     case "clear_pair_history": {
+      required(args, "p1_name");
+      oneOf(args, "p1_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
+      required(args, "p2_name");
+      oneOf(args, "p2_sex", sexes, { required: true, hint: "也接受 male/female/m/f，会自动转换。" });
       const key = pairHistoryKey(args);
       return { pair_history_key: key, ...(await request("DELETE", `/seen/${encodeURIComponent(key)}`)) };
     }
