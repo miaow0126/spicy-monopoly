@@ -149,11 +149,14 @@ function slimData(data, context = {}) {
   if (data.games) slim.games = slimList(data.games, 12);
   if (data.items) slim.items = slimList(data.items, 12);
 
-  // State is intentionally opt-in: only game_info query=state returns the larger
-  // status/board view. Ordinary roll/action calls stay tiny.
+  // The board is player-facing output, not debug noise: keep it so the host AI
+  // can paste the current table to players after each turn/action.
+  if (data.board) slim.board = data.board;
+
+  // Full status is intentionally opt-in; ordinary roll/action calls stay small
+  // while still carrying the rendered board above.
   if (context.tool === "game_info" && context.args?.query === "state") {
     if (data.status) slim.status = data.status;
-    if (data.board) slim.board = data.board;
   }
   if (context.tool === "game_info" && context.args?.query === "shop" && data.status) {
     slim.status = data.status;
