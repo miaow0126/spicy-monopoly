@@ -441,6 +441,7 @@ const feedbackKinds = ["bug", "idea", "feedback"];
 const setupQuestions = [
   "Before new_game, explain: two-player board game, take turns rolling on a 20-tile board, do tasks to earn coins/territory, highest coins wins final command.",
   "Ask and confirm: player names, sex 男/女, role 攻/受, flavor light/medium/heavy, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, first_player.",
+  "Use real/unique player names. For default/common names, call game_info query=pair_history before new_game; if games_played is not expected, ask for a private pair_code instead of silently changing it.",
   "Tell players: coins come from tasks and passing start; completed tasks claim territory; stepping on opponent territory means pay toll or serve.",
   "Tell players: role reversal is an intentional surprise; set reverse_chance=0 if they do not want it.",
 ];
@@ -478,6 +479,7 @@ const newGameHostGuide = [
   "You are the host and a participant, not just a tool caller. Use the engine for state, then roleplay only your own side.",
   "Before first roll, tell players the coin/territory win condition, role reversal rule, safety word 404, skip/swap options, and identity reroll option.",
   "Read active_limits, history_note, identity_reminder, and board from this new_game result to players.",
+  "If history_note says this pair played before and players say that is wrong, stop before rolling. Ask for a unique pair_code or names, then start a new game with that pair_code.",
   "Every turn: call roll(game_id), paste board, read task/hint/action_needed, wait for players before rolling again.",
   "If anyone refuses/stops/says redline/404, use skip or stop immediately; do not argue.",
   "Never invent hidden state. On errors, show the parameter error and retry with corrected args.",
@@ -487,7 +489,8 @@ const newGameDescription = [
   "Before new_game, you MUST explain coin/territory win condition, role reversal, safety word 404, skip/swap, and identity reroll; ask player names, sex, role, flavor, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, and first_player.",
   "Set setup_confirmed=true only after you have explained and asked those settings. If setup_confirmed is false/missing, this tool returns a setup_required error instead of starting.",
   "Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
-  "Use real/unique names for couple history. If both names are the defaults P1/P2 and pair_code is empty, MCP treats the game as anonymous so public users do not collide with other default-name games.",
+  "Use real/unique names for couple history. For default/common names, first call game_info with query=pair_history to show games_played; if that count surprises the players, ask for pair_code and pass it to new_game.",
+  "After new_game, always read history_note to players. If it says prior games but players say this is not them, stop before the first roll and restart with a unique pair_code or names.",
   "Allowed values: lineup=男女/男男/女女 (also accepts mf/mm/ff or male-female); p*_sex=男/女 (also accepts male/female/m/f); p*_role=攻/受 (also accepts top/bottom); flavor=light/medium/heavy; identity_mode=off/mixed/nsfw_only.",
   "Optional setup: redline, open_anal, no_receive_anal, no_penetration are string arrays; game_length is integer 4-60; reverse_chance is 0-1.",
   "Do not invent game_id. Use the returned game_id for roll/game_action/game_info. Bad parameters return an explicit 参数错误 message.",
@@ -598,9 +601,6 @@ tool("new_game", {
     });
   }
   delete args.setup_confirmed;
-  if (args.p1_name === "P1" && args.p2_name === "P2" && isBlank(args.pair_code)) {
-    args.pair_code = `anonymous-${crypto.randomUUID().slice(0, 8)}`;
-  }
   return request("POST", "/new_game", args).then((data) => ({
     ...data,
     host_guide: newGameHostGuide,
