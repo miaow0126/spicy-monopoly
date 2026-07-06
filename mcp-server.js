@@ -308,6 +308,9 @@ function slimCard(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   return pick(value, [
     "内容", "强度", "玩法类型", "target", "kink", "receiver", "reward",
+    "完成奖励", "buyout", "mechanic", "差遣", "羞耻", "对决",
+    "赌注", "判赢", "landlord", "fee", "serve_only", "options",
+    "type", "stored", "msg",
     "name", "desc", "drawn", "effect", "fee", "owner", "winner", "loser",
     "super", "id", "title",
   ]);
@@ -328,10 +331,13 @@ function slimData(data, context = {}) {
   const slim = {};
   const copyKeys = [
     "ok", "error", "msg", "logged", "muted",
-    "game_id", "player_token", "who", "say", "settled",
-    "result", "history_note", "active_limits",
+    "game_id", "player_token", "who", "dice", "tile", "say", "settled",
+    "result", "status", "history_note", "active_limits", "blocked_count",
     "action_needed", "hint", "next_turn", "identity_reminder",
     "feedback_prompt", "pair_history_key",
+    "game_over", "jailed", "asleep", "in_jail",
+    "turn", "positions", "coins", "laps",
+    "theme", "price", "p1_owned", "p2_owned",
     "games_played", "tasks_remembered", "current_game_tasks", "dedup",
     "base_url", "flow", "host_guide", "setup_questions", "safety_rules",
     "turn_loop", "action_map", "mcp_resources",
