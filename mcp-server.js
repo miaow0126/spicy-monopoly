@@ -66,6 +66,40 @@ function compact(value) {
   }));
 }
 
+function normalizeSex(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["女", "female", "f", "woman", "girl"].includes(normalized)) return "女";
+  if (["男", "male", "m", "man", "boy"].includes(normalized)) return "男";
+  return value;
+}
+
+function normalizeRole(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["攻", "top", "seme", "dom", "dominant"].includes(normalized)) return "攻";
+  if (["受", "bottom", "uke", "sub", "submissive"].includes(normalized)) return "受";
+  return value;
+}
+
+function normalizeLineup(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (["男女", "mf", "fm", "malefemale", "femalemale"].includes(normalized)) return "男女";
+  if (["男男", "mm", "malemale"].includes(normalized)) return "男男";
+  if (["女女", "ff", "femalefemale"].includes(normalized)) return "女女";
+  return value;
+}
+
+function normalizeToolArgs(args) {
+  const normalized = { ...args };
+  for (const key of ["p1_sex", "p2_sex"]) {
+    if (normalized[key] !== undefined) normalized[key] = normalizeSex(normalized[key]);
+  }
+  for (const key of ["p1_role", "p2_role"]) {
+    if (normalized[key] !== undefined) normalized[key] = normalizeRole(normalized[key]);
+  }
+  if (normalized.lineup !== undefined) normalized.lineup = normalizeLineup(normalized.lineup);
+  return normalized;
+}
+
 function pairHistoryKey({ p1_name, p1_sex, p2_name, p2_sex, pair_code = "" }) {
   const players = [
     [String(p1_name), String(p1_sex)],
@@ -213,7 +247,7 @@ function registerSpicyMonopoly(server) {
   function tool(name, config, handler) {
     server.registerTool(name, config, async (args) => {
       try {
-        const safeArgs = args || {};
+        const safeArgs = normalizeToolArgs(args || {});
         return result(await handler(safeArgs), { tool: name, args: safeArgs });
       } catch (error) {
         return errorResult(error);
@@ -225,6 +259,12 @@ const strArray = z.array(z.string()).default([]);
 const playerName = z.string().min(1);
 const gameId = z.string().min(1).describe("Game id returned by new_game.");
 const who = z.string().min(1).describe("Player name exactly as used when starting the game.");
+const sexInput = z.enum(["男", "女", "male", "female", "m", "f", "man", "woman", "boy", "girl"])
+  .describe("Player sex. Chinese 男/女 preferred; English male/female is accepted.");
+const roleInput = z.enum(["攻", "受", "top", "bottom", "seme", "uke", "dom", "sub", "dominant", "submissive"])
+  .describe("Player role. Chinese 攻/受 preferred; English top/bottom is accepted.");
+const lineupInput = z.enum(["男女", "男男", "女女", "mf", "fm", "mm", "ff", "male-female", "female-male", "male-male", "female-female"])
+  .describe("Pair lineup. Chinese 男女/男男/女女 preferred; common English shorthand is accepted.");
 
 tool("monopoly_help", {
   title: "玩法与 MCP 帮助",
@@ -249,14 +289,14 @@ tool("new_game", {
   title: "开新局",
   description: "Create a new two-player game. The returned game_id is needed for later tools.",
   inputSchema: {
-    lineup: z.enum(["男女", "男男", "女女"]).default("男女"),
+    lineup: lineupInput.default("男女"),
     flavor: z.enum(["light", "medium", "heavy"]).default("medium"),
     p1_name: playerName.default("P1"),
-    p1_sex: z.enum(["男", "女"]).default("男"),
-    p1_role: z.enum(["攻", "受"]).default("攻"),
+    p1_sex: sexInput.default("男"),
+    p1_role: roleInput.default("攻"),
     p2_name: playerName.default("P2"),
-    p2_sex: z.enum(["男", "女"]).default("女"),
-    p2_role: z.enum(["攻", "受"]).default("受"),
+    p2_sex: sexInput.default("女"),
+    p2_role: roleInput.default("受"),
     p1_color: z.string().default("🔵"),
     p2_color: z.string().default("🔴"),
     redline: strArray.describe("Kinks or switches to exclude, e.g. 后庭, 打, 绑, 玩具, 暴露, 羞辱, 失禁, 电."),
@@ -292,16 +332,16 @@ tool("roll", {
 
 const pairSchema = {
   p1_name: playerName,
-  p1_sex: z.enum(["男", "女"]),
+  p1_sex: sexInput,
   p2_name: playerName,
-  p2_sex: z.enum(["男", "女"]),
+  p2_sex: sexInput,
   pair_code: z.string().default(""),
 };
 const optionalPairSchema = {
   p1_name: z.string().optional(),
-  p1_sex: z.enum(["男", "女"]).optional(),
+  p1_sex: sexInput.optional(),
   p2_name: z.string().optional(),
-  p2_sex: z.enum(["男", "女"]).optional(),
+  p2_sex: sexInput.optional(),
   pair_code: z.string().default(""),
 };
 
