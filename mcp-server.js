@@ -149,6 +149,20 @@ function booleanParam(args, name) {
   throw new Error(`参数错误: \`${name}\` 必须是 true/false，当前是 ${formatValue(args[name])}.`);
 }
 
+function setupRequiredError(details) {
+  const error = new Error([
+    "开局前置步骤未完成：不要直接开局。",
+    "你必须先向玩家说明游戏规则和安全规则，询问并确认设置，然后用 setup_confirmed=true 重新调用 new_game。",
+    "至少要说明：金币/地盘胜负、攻受反转、安全词 404、skip/swap、身份可重抽；至少要询问：名字、性别、攻受、强度、红线、后庭/open_anal、纯 top/no_penetration、反转概率、回合数、身份模式、先手。",
+  ].join("\n"));
+  error.structuredContent = {
+    setup_required: true,
+    action_needed: "Explain rules and ask setup questions before starting. Then call new_game again with setup_confirmed=true.",
+    ...details,
+  };
+  return error;
+}
+
 function pairHistoryKey({ p1_name, p1_sex, p2_name, p2_sex, pair_code = "" }) {
   const players = [
     [String(p1_name), String(p1_sex)],
@@ -287,10 +301,14 @@ function result(data, context = {}) {
 }
 
 function errorResult(error) {
-  return {
+  const response = {
     isError: true,
     content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
   };
+  if (error?.structuredContent && typeof error.structuredContent === "object") {
+    response.structuredContent = error.structuredContent;
+  }
+  return response;
 }
 
 function registerSpicyMonopoly(server) {
@@ -380,7 +398,10 @@ const newGameHostGuide = [
   "Never invent hidden state. On errors, show the parameter error and retry with corrected args.",
 ];
 const newGameDescription = [
-  "Start a new two-player game. Before calling, introduce the rules and ask setup/safety questions; call monopoly_help for the host guide if needed. Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
+  "Start a new two-player game only after setup is explained and confirmed. If you only have the bare MCP URL, first call monopoly_help or use this description as the host manual.",
+  "Before new_game, you MUST explain coin/territory win condition, role reversal, safety word 404, skip/swap, and identity reroll; ask player names, sex, role, flavor, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, and first_player.",
+  "Set setup_confirmed=true only after you have explained and asked those settings. If setup_confirmed is false/missing, this tool returns a setup_required error instead of starting.",
+  "Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
   "Allowed values: lineup=男女/男男/女女 (also accepts mf/mm/ff or male-female); p*_sex=男/女 (also accepts male/female/m/f); p*_role=攻/受 (also accepts top/bottom); flavor=light/medium/heavy; identity_mode=off/mixed/nsfw_only.",
   "Optional setup: redline, open_anal, no_receive_anal, no_penetration are string arrays; game_length is integer 4-60; reverse_chance is 0-1.",
   "Do not invent game_id. Use the returned game_id for roll/game_action/game_info. Bad parameters return an explicit 参数错误 message.",
@@ -417,6 +438,7 @@ tool("monopoly_help", {
   mcp_resources: mcpResources,
   flow: [
     "First explain the game, ask setup/safety questions, then call new_game.",
+    "When and only when setup is explained and confirmed, call new_game with setup_confirmed=true.",
     "Read active_limits, history_note, identity_reminder, and board to players.",
     "Call roll for each turn. If the previous turn had pending work, pass task/toll/super_action/duel_winner only when the result asks for it.",
     "Use game_action for side actions such as skip, swap, duel_result, cards, identity events, or final_result.",
@@ -455,6 +477,7 @@ tool("new_game", {
     pair_code: z.string().default("").describe("Optional private code to separate common names without changing displayed names."),
     reset_blocklist: z.union([z.boolean(), z.string()]).default(false).describe("Boolean true/false. Usually false."),
     first_player: z.string().default("").describe("Optional exact player name who rolls first."),
+    setup_confirmed: z.union([z.boolean(), z.string()]).default(false).describe("Required gate. Set true only after you explained rules/safety and confirmed setup with players; false/missing returns setup_required instead of starting."),
   },
   annotations: { destructiveHint: false, openWorldHint: true },
 }, (args) => {
@@ -468,6 +491,17 @@ tool("new_game", {
   numberParam(args, "reverse_chance", { min: 0, max: 1 });
   numberParam(args, "game_length", { min: 4, max: 60, int: true });
   booleanParam(args, "reset_blocklist");
+  booleanParam(args, "setup_confirmed");
+  if (!args.setup_confirmed) {
+    throw setupRequiredError({
+      setup_questions: setupQuestions,
+      safety_rules: safetyRules,
+      turn_loop: turnLoop,
+      action_map: actionMap,
+      mcp_resources: mcpResources,
+    });
+  }
+  delete args.setup_confirmed;
   return request("POST", "/new_game", args).then((data) => ({
     ...data,
     host_guide: newGameHostGuide,
