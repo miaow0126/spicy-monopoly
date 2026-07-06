@@ -157,6 +157,8 @@ npm install
 
 MCP 菜单刻意压到 6 个工具，避免客户端每轮都把一大串细碎工具 schema 塞进上下文。完整能力仍在 `game_action` / `game_info` / `game_admin` 的 `action` 或 `query` 参数里。
 
+工具返回也默认瘦身：普通开局、掷骰、操作只返回 AI 下一步必须用的字段，不附完整后端 JSON，也不每轮塞棋盘大块；需要完整局面时再调用 `game_info` 的 `state`。
+
 ## 给 AI 的一句话
 
 ```text

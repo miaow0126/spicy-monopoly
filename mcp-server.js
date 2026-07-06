@@ -102,36 +102,80 @@ async function request(method, path, body = undefined, query = undefined) {
   }
 }
 
-function readable(data) {
-  const lines = [];
-  if (data?.game_id) lines.push(`game_id: ${data.game_id}`);
-  if (data?.player_token) lines.push(`player_token: ${data.player_token}`);
-  if (data?.who) lines.push(`who: ${data.who}`);
-  if (data?.settled) lines.push(`settled: ${data.settled}`);
-  if (data?.say) lines.push(`say: ${data.say}`);
-  if (data?.task) lines.push(`task: ${typeof data.task === "string" ? data.task : JSON.stringify(data.task, null, 2)}`);
-  if (data?.truth) lines.push(`truth: ${JSON.stringify(data.truth, null, 2)}`);
-  if (data?.duel) lines.push(`duel: ${JSON.stringify(data.duel, null, 2)}`);
-  if (data?.toll) lines.push(`toll: ${JSON.stringify(data.toll, null, 2)}`);
-  if (data?.mystery) lines.push(`mystery: ${JSON.stringify(data.mystery, null, 2)}`);
-  if (data?.card) lines.push(`card: ${JSON.stringify(data.card, null, 2)}`);
-  if (data?.result) lines.push(`result: ${typeof data.result === "string" ? data.result : JSON.stringify(data.result, null, 2)}`);
-  if (data?.history_note) lines.push(`history_note: ${data.history_note}`);
-  if (data?.active_limits) lines.push(`active_limits: ${typeof data.active_limits === "string" ? data.active_limits : JSON.stringify(data.active_limits, null, 2)}`);
-  if (data?.hint) lines.push(`hint: ${data.hint}`);
-  if (data?.next_turn) lines.push(`next_turn: ${data.next_turn}`);
-  if (data?.board) lines.push(`board:\n${data.board}`);
-  if (data?.status && !data?.board) lines.push(`status:\n${data.status}`);
-  return lines.length ? lines.join("\n\n") : JSON.stringify(data, null, 2);
+function pick(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return compact(Object.fromEntries(keys.map((key) => [key, value[key]])));
 }
 
-function result(data) {
+function slimCard(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return pick(value, [
+    "内容", "强度", "玩法类型", "target", "kink", "receiver", "reward",
+    "name", "desc", "drawn", "effect", "fee", "owner", "winner", "loser",
+    "super", "id", "title",
+  ]);
+}
+
+function slimList(items, limit = 10) {
+  if (!Array.isArray(items)) return items;
   return {
-    content: [
-      { type: "text", text: readable(data) },
-      { type: "text", text: `\nJSON:\n${JSON.stringify(data, null, 2)}` },
-    ],
-    structuredContent: data && typeof data === "object" && !Array.isArray(data) ? data : { result: data },
+    count: items.length,
+    items: items.slice(0, limit),
+    truncated: items.length > limit,
+  };
+}
+
+function slimData(data, context = {}) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { result: data };
+
+  const slim = {};
+  const copyKeys = [
+    "ok", "msg", "logged", "muted",
+    "game_id", "player_token", "who", "say", "settled",
+    "result", "history_note", "active_limits",
+    "action_needed", "hint", "next_turn", "identity_reminder",
+    "feedback_prompt", "pair_history_key",
+    "games_played", "tasks_remembered", "current_game_tasks", "dedup",
+    "base_url", "flow",
+  ];
+  for (const key of copyKeys) {
+    if (data[key] !== undefined && data[key] !== null && data[key] !== "") slim[key] = data[key];
+  }
+
+  for (const key of ["task", "truth", "duel", "toll", "mystery", "card"]) {
+    if (data[key] !== undefined && data[key] !== null) slim[key] = slimCard(data[key]);
+  }
+
+  if (data.games) slim.games = slimList(data.games, 12);
+  if (data.items) slim.items = slimList(data.items, 12);
+
+  // State is intentionally opt-in: only game_info query=state returns the larger
+  // status/board view. Ordinary roll/action calls stay tiny.
+  if (context.tool === "game_info" && context.args?.query === "state") {
+    if (data.status) slim.status = data.status;
+    if (data.board) slim.board = data.board;
+  }
+  if (context.tool === "game_info" && context.args?.query === "shop" && data.status) {
+    slim.status = data.status;
+  }
+
+  return compact(slim);
+}
+
+function readable(data, context = {}) {
+  const slim = slimData(data, context);
+  const lines = [];
+  for (const [key, value] of Object.entries(slim)) {
+    lines.push(`${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+  }
+  return lines.length ? lines.join("\n") : "{}";
+}
+
+function result(data, context = {}) {
+  const structuredContent = slimData(data, context);
+  return {
+    content: [{ type: "text", text: readable(data, context) }],
+    structuredContent,
   };
 }
 
@@ -146,7 +190,8 @@ function registerSpicyMonopoly(server) {
   function tool(name, config, handler) {
     server.registerTool(name, config, async (args) => {
       try {
-        return result(await handler(args || {}));
+        const safeArgs = args || {};
+        return result(await handler(safeArgs), { tool: name, args: safeArgs });
       } catch (error) {
         return errorResult(error);
       }
