@@ -487,6 +487,7 @@ const newGameDescription = [
   "Before new_game, you MUST explain coin/territory win condition, role reversal, safety word 404, skip/swap, and identity reroll; ask player names, sex, role, flavor, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, and first_player.",
   "Set setup_confirmed=true only after you have explained and asked those settings. If setup_confirmed is false/missing, this tool returns a setup_required error instead of starting.",
   "Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
+  "Use real/unique names for couple history. If both names are the defaults P1/P2 and pair_code is empty, MCP treats the game as anonymous so public users do not collide with other default-name games.",
   "Allowed values: lineup=男女/男男/女女 (also accepts mf/mm/ff or male-female); p*_sex=男/女 (also accepts male/female/m/f); p*_role=攻/受 (also accepts top/bottom); flavor=light/medium/heavy; identity_mode=off/mixed/nsfw_only.",
   "Optional setup: redline, open_anal, no_receive_anal, no_penetration are string arrays; game_length is integer 4-60; reverse_chance is 0-1.",
   "Do not invent game_id. Use the returned game_id for roll/game_action/game_info. Bad parameters return an explicit 参数错误 message.",
@@ -597,6 +598,9 @@ tool("new_game", {
     });
   }
   delete args.setup_confirmed;
+  if (args.p1_name === "P1" && args.p2_name === "P2" && isBlank(args.pair_code)) {
+    args.pair_code = `anonymous-${crypto.randomUUID().slice(0, 8)}`;
+  }
   return request("POST", "/new_game", args).then((data) => ({
     ...data,
     host_guide: newGameHostGuide,
