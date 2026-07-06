@@ -27,6 +27,24 @@ const MCP_ALLOWED_HOSTS = (process.env.SPICY_MONOPOLY_MCP_ALLOWED_HOSTS || "")
   .map((host) => host.trim())
   .filter(Boolean);
 
+function ensureMcpAcceptHeader(req) {
+  const desired = "application/json, text/event-stream";
+  const accept = String(req.headers.accept || "");
+  if (accept.includes("application/json") && accept.includes("text/event-stream")) return;
+
+  req.headers.accept = desired;
+
+  if (!Array.isArray(req.rawHeaders)) return;
+  let found = false;
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    if (String(req.rawHeaders[i]).toLowerCase() === "accept") {
+      req.rawHeaders[i + 1] = desired;
+      found = true;
+    }
+  }
+  if (!found) req.rawHeaders.push("Accept", desired);
+}
+
 function createSpicyMonopolyServer() {
   const server = new McpServer({
     name: "spicy-monopoly",
@@ -515,6 +533,8 @@ async function runHttp() {
       return;
     }
 
+    ensureMcpAcceptHeader(req);
+
     const server = createSpicyMonopolyServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -602,13 +622,29 @@ async function runHttp() {
     process.exit(1);
   });
 
-  process.on("SIGINT", () => {
-    httpServer.close(() => process.exit(0));
-  });
+  let shuttingDown = false;
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
 
-  process.on("SIGTERM", () => {
+    for (const transport of sseTransports.values()) {
+      transport.close().catch((error) => {
+        console.error("Error closing legacy SSE transport:", error);
+      });
+    }
+    sseTransports.clear();
+
     httpServer.close(() => process.exit(0));
-  });
+    httpServer.closeIdleConnections?.();
+    const forceExit = setTimeout(() => {
+      httpServer.closeAllConnections?.();
+      process.exit(0);
+    }, 5000);
+    forceExit.unref();
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 if (MCP_TRANSPORT === "http" || MCP_TRANSPORT === "streamable-http") {

@@ -23,6 +23,14 @@ https://spicy-monopoly.lol/mcp
 
 如果客户端支持远程 MCP / Streamable HTTP MCP，把这个 URL 填进去即可。
 这个地址同时兼容较新的 Streamable HTTP 和旧式 HTTP+SSE 客户端；如果客户端明确要求 SSE URL，也填同一个 `/mcp`。
+公开服务不需要 `Authorization`。如果客户端要求手动填写请求头，可以填：
+
+```json
+{
+  "Accept": "application/json, text/event-stream",
+  "Content-Type": "application/json"
+}
+```
 
 有些客户端用 JSON 配置，通常长这样：
 
