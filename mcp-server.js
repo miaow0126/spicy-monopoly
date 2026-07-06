@@ -26,6 +26,7 @@ const MCP_ALLOWED_HOSTS = (process.env.SPICY_MONOPOLY_MCP_ALLOWED_HOSTS || "")
   .split(",")
   .map((host) => host.trim())
   .filter(Boolean);
+const MCP_RULES_ACK = "mcp-host-v2026-07-06";
 
 function ensureMcpAcceptHeader(req) {
   const desired = "application/json, text/event-stream";
@@ -111,6 +112,8 @@ const argAliases = {
   first_player: "first_player",
   setupconfirmed: "setup_confirmed",
   setup_confirmed: "setup_confirmed",
+  rulesack: "rules_ack",
+  rules_ack: "rules_ack",
 };
 
 function aliasKey(key) {
@@ -232,12 +235,14 @@ function booleanParam(args, name) {
 function setupRequiredError(details) {
   const error = new Error([
     "开局前置步骤未完成：不要直接开局。",
-    "你必须先向玩家说明游戏规则和安全规则，询问并确认设置，然后用 setup_confirmed=true 重新调用 new_game。",
+    "你必须先调用 monopoly_help 阅读 MCP 荷官规则，向玩家说明游戏规则和安全规则，询问并确认设置。",
+    `完成后用 setup_confirmed=true 且 rules_ack="${MCP_RULES_ACK}" 重新调用 new_game。`,
     "至少要说明：金币/地盘胜负、攻受反转、安全词 404、skip/swap、身份可重抽；至少要询问：名字、性别、攻受、强度、红线、后庭/open_anal、纯 top/no_penetration、反转概率、回合数、身份模式、先手。",
   ].join("\n"));
   error.structuredContent = {
     setup_required: true,
-    action_needed: "Explain rules and ask setup questions before starting. Then call new_game again with setup_confirmed=true.",
+    action_needed: `Call monopoly_help first, follow the MCP host rules, explain/confirm setup with players, then call new_game with setup_confirmed=true and rules_ack="${MCP_RULES_ACK}".`,
+    required_rules_ack: MCP_RULES_ACK,
     ...details,
   };
   return error;
@@ -340,7 +345,8 @@ function slimData(data, context = {}) {
     "theme", "price", "p1_owned", "p2_owned",
     "games_played", "tasks_remembered", "current_game_tasks", "dedup",
     "base_url", "flow", "host_guide", "setup_questions", "safety_rules",
-    "turn_loop", "action_map", "mcp_resources",
+    "turn_loop", "action_map", "identity_action_map", "card_rules",
+    "host_rules", "required_rules_ack", "rules_ack", "mcp_resources",
   ];
   for (const key of copyKeys) {
     if (data[key] !== undefined && data[key] !== null && data[key] !== "") slim[key] = data[key];
@@ -444,6 +450,12 @@ const identityEvents = ["first_climax", "say_banned", "no_kiss_2turns"];
 const infoQueries = ["state", "shop", "list_games", "pair_history"];
 const adminActions = ["delete_game", "clear_pair_history", "submit_feedback"];
 const feedbackKinds = ["bug", "idea", "feedback"];
+const hostRules = [
+  "Never start from a bare new_game call. First call monopoly_help, learn the MCP host rules, explain setup/safety to players, then pass setup_confirmed=true and the current rules_ack.",
+  "Use the API engine as source of truth: never invent dice, tasks, coins, winners, hidden mark spots, identities, or board state.",
+  "You are the host and may roleplay your side, but tool results decide game mechanics. Keep the board visible to players.",
+  "Every new game needs setup confirmation. A remembered rules_ack only proves you know the rules; setup_confirmed means this specific game was explained and confirmed.",
+];
 const setupQuestions = [
   "Before new_game, explain: two-player board game, take turns rolling on a 20-tile board, do tasks to earn coins/territory, highest coins wins final command.",
   "Ask and confirm: player names, sex 男/女, role 攻/受, flavor light/medium/heavy, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, first_player.",
@@ -475,7 +487,27 @@ const actionMap = {
   cards: "game_action action='buy_card'/'use_card'/'discard_card', with who and index when needed",
   identity: "game_action action='reroll_identity'/'id_event'/'extra_task'/'guess_mark'/'declare_persona'",
 };
+const identityActionMap = {
+  "🎰赌徒": "Before roll, ask/choose 大 or 小, then call roll {game_id, guess:'大'|'小'}.",
+  "🐱猫猫": "If a pending task needs the free identity reroll, call game_action {action:'reroll_task', game_id, who}.",
+  "🫣处子": "When that player's first climax of the game happens, call game_action {action:'id_event', game_id, who, event:'first_climax'}.",
+  "🤐禁言者": "When the banned word is said and caught, call game_action {action:'id_event', game_id, who, event:'say_banned'}.",
+  "💋接吻魔": "If two rounds pass without getting a kiss, call game_action {action:'id_event', game_id, who, event:'no_kiss_2turns'}.",
+  "➕不知餍足": "When they want one extra task, call game_action {action:'extra_task', game_id, who}. Limit is enforced by the engine.",
+  "🌀淫纹持有者": "The holder's mark spot is hidden from everyone. Opponent may guess once per round with game_action {action:'guess_mark', game_id, who:<guesser>, spot:<body spot>}.",
+  "🎭背德者": "At the start, ask them to declare a taboo persona, then call game_action {action:'declare_persona', game_id, who, persona:<text>}.",
+  "Any identity": "If a player cannot play their identity, call game_action {action:'reroll_identity', game_id, who}. Once per player per game.",
+  "Chance identity swap": "If roll says a new identity was protected/held and players want to swap anyway, next roll may include swap_identity:true.",
+};
+const cardRules = [
+  "Shop tile: if the current player wants to draw a card, call game_action {action:'buy_card', game_id, who}. Cost/discount is enforced by the engine.",
+  "Chance/card/mystery draws may enter the player's hand automatically. Read card/result/msg to players; do not invent card effects.",
+  "Use a hand card with game_action {action:'use_card', game_id, who, index}. index is 0-based; card name is tolerated, but index is preferred.",
+  "Discard with game_action {action:'discard_card', game_id, who, index}, especially if the hand is full or the player does not want that card.",
+  "If unsure what cards a player has, call game_info {query:'state', game_id} and inspect status/hand.",
+];
 const mcpResources = [
+  "spicy-monopoly://manual/mcp-host",
   "spicy-monopoly://manual/ai",
   "spicy-monopoly://manual/human",
   "spicy-monopoly://manual/api",
@@ -485,15 +517,17 @@ const newGameHostGuide = [
   "You are the host and a participant, not just a tool caller. Use the engine for state, then roleplay only your own side.",
   "Before first roll, tell players the coin/territory win condition, role reversal rule, safety word 404, skip/swap options, and identity reroll option.",
   "Read active_limits, history_note, identity_reminder, and board from this new_game result to players.",
+  "For active identities, follow identity_action_map from monopoly_help; some events happen in conversation and must be reported with game_action.",
+  "For feature cards, follow card_rules from monopoly_help; buy/use/discard are all game_action calls.",
   "If history_note says this pair played before and players say that is wrong, stop before rolling. Ask for a unique pair_code or names, then start a new game with that pair_code.",
   "Every turn: call roll(game_id), paste board, read task/hint/action_needed, wait for players before rolling again.",
   "If anyone refuses/stops/says redline/404, use skip or stop immediately; do not argue.",
   "Never invent hidden state. On errors, show the parameter error and retry with corrected args.",
 ];
 const newGameDescription = [
-  "Start a new two-player game only after setup is explained and confirmed. If you only have the bare MCP URL, first call monopoly_help or use this description as the host manual.",
+  "Start a new two-player game only after setup is explained and confirmed. If you only have the bare MCP URL, first call monopoly_help, learn the MCP host rules, and copy its rules_ack.",
   "Before new_game, you MUST explain coin/territory win condition, role reversal, safety word 404, skip/swap, and identity reroll; ask player names, sex, role, flavor, redlines, anal/open_anal, pure top/no_penetration, reverse_chance, game_length, identity_mode, and first_player.",
-  "Set setup_confirmed=true only after you have explained and asked those settings. If setup_confirmed is false/missing, this tool returns a setup_required error instead of starting.",
+  "Set setup_confirmed=true only after you have explained and asked those settings. Also pass rules_ack from monopoly_help. If either is false/missing/wrong, this tool returns setup_required instead of starting.",
   "Required/important args: p1_name, p2_name, p1_sex, p2_sex, p1_role, p2_role.",
   "Use real/unique names for couple history. For default/common names, first call game_info with query=pair_history to show games_played; if that count surprises the players, ask for pair_code and pass it to new_game.",
   "After new_game, always read history_note to players. If it says prior games but players say this is not them, stop before the first roll and restart with a unique pair_code or names.",
@@ -509,6 +543,8 @@ const rollDescription = [
 const actionDescription = [
   `Non-roll actions. Required: action and game_id. action must be one of: ${gameActions.join(", ")}.`,
   "Most actions also require who=exact player name. duel_result requires winner. use_card/discard_card require index. guess_mark requires spot. declare_persona requires persona. id_event requires event=first_climax/say_banned/no_kiss_2turns.",
+  "Active identity map: 猫猫->reroll_task; 处子->id_event first_climax; 禁言者->id_event say_banned; 接吻魔->id_event no_kiss_2turns; 不知餍足->extra_task; 淫纹持有者->guess_mark with who as the guesser; 背德者->declare_persona.",
+  "Feature cards: buy_card at shop; use_card/discard_card use 0-based hand index.",
   "Use skip immediately when a player refuses, says stop/redline/404, or does not want a task.",
 ].join(" ");
 const infoDescription = [
@@ -526,14 +562,18 @@ tool("monopoly_help", {
   annotations: { readOnlyHint: true, openWorldHint: true },
 }, async () => ({
   base_url: BASE_URL,
+  rules_ack: MCP_RULES_ACK,
+  host_rules: hostRules,
   setup_questions: setupQuestions,
   safety_rules: safetyRules,
   turn_loop: turnLoop,
   action_map: actionMap,
+  identity_action_map: identityActionMap,
+  card_rules: cardRules,
   mcp_resources: mcpResources,
   flow: [
     "First explain the game, ask setup/safety questions, then call new_game.",
-    "When and only when setup is explained and confirmed, call new_game with setup_confirmed=true.",
+    `When and only when setup is explained and confirmed, call new_game with setup_confirmed=true and rules_ack="${MCP_RULES_ACK}".`,
     "Read active_limits, history_note, identity_reminder, and board to players.",
     "Call roll for each turn. If the previous turn had pending work, pass task/toll/super_action/duel_winner only when the result asks for it.",
     "Use game_action for side actions such as skip, swap, duel_result, cards, identity events, or final_result.",
@@ -583,6 +623,8 @@ tool("new_game", {
     firstplayer: z.string().optional().describe("Alias for first_player."),
     setup_confirmed: z.union([z.boolean(), z.string()]).default(false).describe("Required gate. Set true only after you explained rules/safety and confirmed setup with players; false/missing returns setup_required instead of starting."),
     setupconfirmed: z.union([z.boolean(), z.string()]).optional().describe("Alias for setup_confirmed."),
+    rules_ack: z.string().default("").describe("Required MCP host-rules version from monopoly_help."),
+    rulesack: z.string().optional().describe("Alias for rules_ack."),
   },
   annotations: { destructiveHint: false, openWorldHint: true },
 }, (args) => {
@@ -597,12 +639,15 @@ tool("new_game", {
   numberParam(args, "game_length", { min: 4, max: 60, int: true });
   booleanParam(args, "reset_blocklist");
   booleanParam(args, "setup_confirmed");
-  if (!args.setup_confirmed) {
+  if (!args.setup_confirmed || args.rules_ack !== MCP_RULES_ACK) {
     throw setupRequiredError({
+      host_rules: hostRules,
       setup_questions: setupQuestions,
       safety_rules: safetyRules,
       turn_loop: turnLoop,
       action_map: actionMap,
+      identity_action_map: identityActionMap,
+      card_rules: cardRules,
       mcp_resources: mcpResources,
     });
   }
@@ -832,6 +877,7 @@ tool("game_admin", {
 });
 
 const manualFiles = [
+  ["spicy-monopoly://manual/mcp-host", "monopoly-MCP荷官手册.md", "MCP 荷官手册：裸 MCP AI 开局、规则、身份主动技、功能卡"],
   ["spicy-monopoly://manual/ai", "monopoly-给AI的操作手册.md", "完整荷官手册：开局说明、安全规则、回合节奏、身份/红线"],
   ["spicy-monopoly://manual/api", "monopoly-API使用手册.md", "HTTP API 使用手册"],
   ["spicy-monopoly://manual/human", "monopoly-怎么玩-人类版.md", "给人类玩家的玩法简介"],
@@ -865,8 +911,9 @@ server.registerPrompt("start_spicy_monopoly", {
       type: "text",
       text: [
         "Use the Spicy Monopoly MCP tools to run the game. Do not invent dice rolls, tasks, coins, winners, or hidden mark positions.",
-        "First call monopoly_help and follow its setup_questions, safety_rules, turn_loop, and action_map. If resources are available, read spicy-monopoly://manual/ai.",
+        "First call monopoly_help and follow its host_rules, setup_questions, safety_rules, turn_loop, identity_action_map, card_rules, and action_map. If resources are available, read spicy-monopoly://manual/mcp-host.",
         "Before new_game, explain the coin/territory win condition, role reversal, safety word 404, skip/swap options, and ask setup/redlines.",
+        "Call new_game only after setup is confirmed, with setup_confirmed=true and the rules_ack returned by monopoly_help.",
         "After new_game, read active_limits, history_note, identity_reminder, and board back to the players before the first roll.",
         "For each turn, call roll(game_id only), show board, follow hint/action_needed, then wait for players before rolling again.",
         "If a player says stop, redline, 404, or does not want a task, call game_action with action='skip' immediately without asking them to justify it.",
