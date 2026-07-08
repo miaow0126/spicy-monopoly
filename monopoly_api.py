@@ -78,6 +78,7 @@ class NewGameRequest(BaseModel):
     first_player: str = ""               # ★谁先掷骰(默认p1_name先手)·想让AI/某人先手就填ta的名字(必须是两个玩家名之一)
     setup_confirmed: bool = False        # API/MCP 开局保护:确认荷官已说明规则和安全设置后再开局
     manual_confirmed: bool = False       # 兼容别名:已读/已理解手册并完成开局说明
+    rules_ack: str = ""                  # ★吃最新规则:从 GET /help(或上一次 428 回包)拿【当前】rules_ack 原样带上·对不上/缺失=你手里规则是旧的·回 /help 重读再开
 
 class RollRequest(BaseModel):
     """掷骰时一行带上悬账决定(傻瓜命令行要能吃参数,金币变化别再额外跑命令)。全部可选,不传=默认。"""
@@ -175,11 +176,17 @@ def _close_prev_and_avoid(rec: dict) -> list:
 
 # ── Endpoints ──
 
+# ★规则版本"暗号"(强制吃最新规则):开局必须报出【当前】rules_ack,对不上/缺失=你手里的规则是旧的→回 GET /help 重读(新规则就在同一个响应里)。
+# 改了任何开局规则/安全默认,就把这里的日期往后挪一版→所有 AI 记忆里的旧 ack 立刻失效→逼它重拉 /help。
+# ★必须与 mcp-server.js 的 MCP_RULES_ACK 同值:MCP 把 rules_ack 原样转发给本 API,同值=MCP 流量自动过门、零改动。
+RULES_ACK = "mcp-host-v2026-07-06"
+
 HELP_SUMMARY = {
     "name": "涩涩大富翁 API",
     "api_base": "https://spicy-monopoly.lol",
+    "rules_ack": RULES_ACK,              # ★当前规则版本暗号·开局时原样填进 POST /new_game 的 rules_ack
     "manual_required": True,
-    "manual_note": "如果你已经了解规则、已经向玩家说明并确认设置，不必重读全文；把原 /new_game 请求加 setup_confirmed:true 后重试即可。",
+    "manual_note": "开局前先拿【本响应里的 rules_ack】,连同 setup_confirmed:true 一起放进 POST /new_game。若重试时报 rules_ack 对不上,说明开局规则/安全默认更新过了,请重看本 /help(必要时 GET /manual/ai)再开局。",
     "read_if_unfamiliar": ["GET /help", "GET /manual/ai", "GET /manual/api"],
     "new_game": {
         "method": "POST",
@@ -190,7 +197,7 @@ HELP_SUMMARY = {
             "询问并确认名字、性别、攻受、强度、红线、后庭 open_anal、纯 top no_penetration、反转概率、局长、身份模式、先手",
             "常见名/默认名先查历史或开局后读 history_note；若撞名，问 pair_code 后重开",
         ],
-        "retry": "POST /new_game with setup_confirmed:true after the setup briefing is done",
+        "retry": "POST /new_game with setup_confirmed:true AND rules_ack=<本响应里的 rules_ack> after the setup briefing is done",
     },
     "after_new_game": [
         "把 active_limits 原样念给玩家确认",
@@ -211,14 +218,24 @@ HELP_SUMMARY = {
     },
 }
 
-def manual_required_response():
+def manual_required_response(reason: str = "setup"):
+    if reason == "rules":
+        error = "规则版本对不上(rules_ack 缺失或过期)：你手里的开局规则可能是旧的。"
+        short = "把本响应里的 rules_ack 原样带上(它是当前规则版本号),连同 setup_confirmed:true 重试 POST /new_game。★rules_ack 变了=开局规则/安全默认更新过·开局前请扫一眼下面的 checklist(必要时 GET /manual/ai)。"
+    else:
+        error = "开局前置步骤未确认：不要直接开局。"
+        short = "如果你已经向玩家说明过规则/安全词并确认设置，原请求加 setup_confirmed:true 和 rules_ack(见本响应)后重试。"
     return JSONResponse(status_code=428, content={
         "ok": False,
         "manual_required": True,
-        "error": "开局前置步骤未确认：不要直接开局。",
-        "short_answer": "如果你已经向玩家说明过规则/安全词并确认设置，不需要读全文；原请求加 setup_confirmed:true 后重试。",
+        "rules_ack": RULES_ACK,          # ★当前暗号·原样填回 /new_game 的 rules_ack(缺它照样 428)
+        "reason": reason,
+        "error": error,
+        "short_answer": short,
         "read_if_unfamiliar": HELP_SUMMARY["read_if_unfamiliar"],
         "checklist": HELP_SUMMARY["new_game"]["required_before_start"],
+        "after_new_game": HELP_SUMMARY["after_new_game"],
+        "turn_loop": HELP_SUMMARY["turn_loop"],
         "retry": HELP_SUMMARY["new_game"]["retry"],
     })
 
@@ -245,7 +262,7 @@ def wrong_new_endpoint():
         "ok": False,
         "error": "端点不存在：开局请用 POST /new_game，不是 /new 或 /start。",
         "help": "GET /help",
-        "retry": "POST /new_game with setup_confirmed:true after explaining rules and confirming setup.",
+        "retry": "POST /new_game with setup_confirmed:true and rules_ack (see GET /help) after explaining rules and confirming setup.",
     })
 
 _INTRO = (
@@ -269,7 +286,9 @@ def new_game(req: NewGameRequest):
     """开局：创建新游戏，返回 game_id + player_token + 棋盘 + 状态。
     跨局记忆:带上次的 player_token → 这局自动躲开你最近10局出过的任务;不带则发个新令牌给你。"""
     if not (req.setup_confirmed or req.manual_confirmed):
-        return manual_required_response()
+        return manual_required_response("setup")
+    if req.rules_ack != RULES_ACK:                    # ★吃最新规则:暗号对不上/缺失=规则可能更新过·428 让它回 /help 重读再开
+        return manual_required_response("rules")
     dedup = _dedup_key(req.p1_name, req.p2_name, req.p1_sex, req.p2_sex, req.pair_code)   # 去重key按名字+性别[+暗号](AI不用记·忘token也接得上)
     token = req.player_token or uuid.uuid4().hex[:12]   # token只做鉴权(删局/看局)·去重不靠它
     rec = _load_token(dedup)
