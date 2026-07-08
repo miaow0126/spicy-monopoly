@@ -245,8 +245,10 @@ class Game:
                 "  Game(p1_name='Alice', p1_sex='男', p1_role='攻',\n"
                 "       p2_name='Bob', p2_sex='女', p2_role='受', redline=[])\n"
                 "  性别填 男/女,角色填 攻/受;两男局加 lineup='男男',两女局 lineup='女女'。")
-        assert lineup in ("男女", "男男", "女女")
-        assert flavor in CURVES
+        if lineup not in ("男女", "男男", "女女"):
+            raise ValueError(f"lineup 必须是 男女/男男/女女,收到 {lineup!r}")
+        if flavor not in CURVES:
+            raise ValueError(f"flavor 必须是 light/medium/heavy,收到 {flavor!r}")
         self.lineup, self.flavor = lineup, flavor
         self.p1, self.p2 = p1_name, p2_name
         self.sex = {p1_name: p1_sex, p2_name: p2_sex}
@@ -307,7 +309,8 @@ class Game:
         self.hand = {p1_name: [], p2_name: []}
         # Identity card system — assign at start
         # 身份系统 v2:三档 identity_mode(off/mixed/nsfw_only)+跨局去重+每人每局1次重抽
-        assert identity_mode in ("off", "mixed", "nsfw_only")
+        if identity_mode not in ("off", "mixed", "nsfw_only"):
+            raise ValueError(f"identity_mode 必须是 off/mixed/nsfw_only,收到 {identity_mode!r}")
         self.identity_mode = identity_mode
         self._id_avoid = set(avoid_identities or [])      # 跨局去重:最近玩过的身份名(API 层从 seen 注入)
         self.identity_rerolled = {p1_name: False, p2_name: False}   # 每人每局 1 次身份重抽权

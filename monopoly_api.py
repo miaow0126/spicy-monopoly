@@ -297,6 +297,10 @@ def new_game(req: NewGameRequest):
         _save_token(dedup, rec)
     avoid = _close_prev_and_avoid(rec)        # 收上一局 + 取最近10局躲避集(任务) + 收身份
     prev_games = int(rec.get("game_count", 0))    # 透明化:折叠上一局后读=这对玩家之前玩了几局(含刚折进来的上局·同名混了人类能察觉)
+    if req.lineup not in ("男女", "男男", "女女"):     # ★值校验(治500):非法值别进引擎撞assert崩500·给友好422
+        raise HTTPException(422, f"lineup 只能是 男女/男男/女女(男女=异性局·男男/女女=同性局),收到 {req.lineup!r}")
+    if req.flavor not in ("light", "medium", "heavy"):
+        raise HTTPException(422, f"flavor 只能是 light/medium/heavy(强度段·轻/中/重),收到 {req.flavor!r}")
     if req.identity_mode not in ("off", "mixed", "nsfw_only"):
         raise HTTPException(422, f"identity_mode 只能是 off/mixed/nsfw_only,收到 {req.identity_mode!r}")
     if req.redline:                            # redline 拼错=安全洞·别静默吞
