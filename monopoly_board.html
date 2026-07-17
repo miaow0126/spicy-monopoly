@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>涩涩大富翁 · 棋盘</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0B0913;--sur:#141028;--sur2:#1C1638;
+  --rose:#C84F72;--rosedim:rgba(200,79,114,.13);
+  --vio:#7B5BAD;--viodim:rgba(123,91,173,.13);
+  --gold:#C9A450;
+  --text:#EDE5EF;--muted:#7A6A8A;--border:#242038;
+  --t-task:#18102E;--t-truth:#0B2030;--t-chance:#0B261A;
+  --t-myst:#281608;--t-jail:#260808;--t-shop:#221C06;--t-start:#240A18;
+}
+
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);
+  font-family:-apple-system,'Helvetica Neue',sans-serif;
+  display:flex;flex-direction:row}
+
+/* ══ LEFT SIDEBAR ══════════════════════════════════ */
+.sidebar{
+  width:180px;min-width:180px;
+  background:var(--sur);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  height:100vh;overflow-y:auto;
+}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+
+.logo{
+  padding:16px 14px 14px;
+  border-bottom:1px solid var(--border);
+  font-family:Georgia,serif;font-size:1rem;
+  letter-spacing:.18em;color:var(--rose);text-align:center;
+  text-shadow:0 0 20px rgba(200,79,114,.3);flex-shrink:0;
+}
+.logo small{display:block;font-family:sans-serif;font-size:.5rem;
+  letter-spacing:.2em;color:var(--muted);margin-top:3px;text-transform:uppercase}
+
+.sb-sec{padding:12px 14px;border-bottom:1px solid var(--border)}
+.sb-lbl{font-size:.52rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:7px}
+
+.session-card{
+  background:var(--sur2);border:1px solid var(--border);
+  border-radius:7px;padding:9px 10px;cursor:pointer;
+  transition:border-color .2s;margin-bottom:6px;
+}
+.session-card:hover{border-color:rgba(200,79,114,.4)}
+.session-card.active{border-color:var(--rose)}
+.sc-id{font-size:.58rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:3px}
+.sc-date{font-size:.62rem;color:var(--text)}
+.sc-meta{font-size:.56rem;color:var(--muted);margin-top:2px}
+.sc-result{font-size:.6rem;margin-top:4px;padding:2px 6px;
+  border-radius:3px;display:inline-block;
+  background:var(--rosedim);color:var(--rose)}
+
+.safety{padding:12px 14px;margin-top:auto;border-top:1px solid var(--border)}
+.safety-txt{font-size:.6rem;color:var(--muted);text-align:center;line-height:1.6}
+.safety-word{color:var(--rose);font-weight:700;letter-spacing:.1em}
+
+/* ══ MAIN ═══════════════════════ */
+.main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;min-width:0}
+
+.top{
+  display:flex;flex-direction:row;
+  flex-shrink:0;
+  height:62vh;
+  border-bottom:1px solid var(--border);
+  overflow:hidden;
+}
+
+.board-area{
+  padding:12px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.board{
+  background:#080611;border:1.5px solid var(--border);border-radius:10px;
+  padding:3px;display:grid;
+  grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);
+  gap:3px;aspect-ratio:1/1;
+  height:100%;max-height:calc(62vh - 24px);
+}
+.tile{border-radius:4px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;position:relative;
+  overflow:hidden;transition:filter .15s;cursor:default;
+  font-size:clamp(7px,1.1vw,11px);border:1px solid rgba(255,255,255,.04)}
+.tile:hover{filter:brightness(1.28)}
+.tile .ic{font-size:1.4em;line-height:1}
+.tile .lb{font-size:.52em;color:rgba(255,255,255,.38);margin-top:1px;text-align:center;line-height:1.2}
+.tile .nb{position:absolute;bottom:2px;right:2px;font-size:.44em;color:rgba(255,255,255,.2);font-variant-numeric:tabular-nums}
+.tile-start{background:var(--t-start)}.tile-task{background:var(--t-task)}
+.tile-truth{background:var(--t-truth)}.tile-chance{background:var(--t-chance)}
+.tile-mystery{background:var(--t-myst)}.tile-jail{background:var(--t-jail)}
+.tile-shop{background:var(--t-shop)}
+.tile.hi-a{box-shadow:inset 0 0 0 1.5px var(--rose),0 0 8px rgba(200,79,114,.3)}
+.tile.hi-b{box-shadow:inset 0 0 0 1.5px var(--vio),0 0 8px rgba(123,91,173,.3)}
+.tile.hi-ab{box-shadow:inset 0 0 0 1.5px var(--gold),0 0 8px rgba(201,164,80,.3)}
+.bcenter{grid-row:2/6;grid-column:2/6;background:rgba(0,0,0,.5);
+  border-radius:6px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px;padding:6px}
+.bc-t{font-family:Georgia,serif;font-size:.8em;color:var(--rose);
+  letter-spacing:.1em;text-align:center;line-height:1.4;
+  text-shadow:0 0 16px rgba(200,79,114,.35)}
+.bc-r{font-size:.48em;color:var(--muted);letter-spacing:.07em}
+#turnLabel{font-size:.5em;letter-spacing:.05em;padding:2px 8px;
+  border-radius:10px;background:rgba(255,255,255,.05);transition:color .3s;text-align:center}
+.tok{width:14px;height:14px;border-radius:50%;position:absolute;
+  border:1.5px solid rgba(255,255,255,.3);display:flex;align-items:center;
+  justify-content:center;font-size:6.5px;font-weight:700;z-index:3;
+  pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.tok-a{background:var(--rose);top:3px;left:3px}
+.tok-b{background:var(--vio);top:3px;right:3px}
+
+.player-side{
+  flex:1;min-width:0;
+  padding:10px 12px 10px 4px;
+  display:flex;flex-direction:column;gap:8px;
+  overflow-y:auto;
+}
+.player-side::-webkit-scrollbar{width:3px}
+.player-side::-webkit-scrollbar-thumb{background:var(--border)}
+
+.pcard{
+  background:var(--sur);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.pcard.pa{border-left:2px solid var(--rose)}
+.pcard.pb{border-left:2px solid var(--vio)}
+
+.pc-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pc-name{font-family:Georgia,serif;font-size:.85rem;font-weight:normal}
+.pa .pc-name{color:var(--rose)}.pb .pc-name{color:var(--vio)}
+.pc-role{font-size:.58rem;color:var(--muted)}
+.pc-jail{font-size:.58rem;color:#FF6666;display:none}
+
+.pc-stats{display:flex;gap:12px;flex-wrap:wrap}
+.pcs{font-size:.62rem}
+.pcs-lbl{color:var(--muted)}
+.pcs-val{font-weight:600;font-variant-numeric:tabular-nums}
+.pcs-val.gold{color:var(--gold)}
+
+.id-timeline{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--border);padding-top:6px}
+.id-tl-lbl{font-size:.52rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.id-entry{display:flex;flex-direction:column;gap:2px}
+.id-tag{font-size:.65rem}
+.pa .id-tag.current{color:var(--rose)}.pb .id-tag.current{color:var(--vio)}
+.id-tag.old{color:var(--muted)}
+.id-when{font-size:.52rem;color:var(--muted)}
+.id-desc{font-size:.58rem;color:var(--muted);line-height:1.55;padding-left:10px;border-left:1px solid var(--border)}
+.id-arrow{font-size:.52rem;color:var(--muted);padding-left:4px}
+
+.bottom{flex:1;overflow-y:auto;padding:0;display:flex;flex-direction:column;}
+.bottom::-webkit-scrollbar{width:4px}
+.bottom::-webkit-scrollbar-track{background:transparent}
+.bottom::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+.log-hd{
+  position:sticky;top:0;z-index:10;
+  background:var(--sur);
+  padding:8px 16px;
+  font-size:.56rem;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+.log-count{font-variant-numeric:tabular-nums;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:10px}
+.log-entries{padding:6px 16px 20px;display:flex;flex-direction:column;gap:0}
+.log-entry{
+  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);
+  display:grid;grid-template-columns:36px 48px 1fr;
+  gap:6px;align-items:baseline;font-size:.65rem;line-height:1.5;
+}
+.log-entry:last-child{border-bottom:none}
+.le-round{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.58rem;text-align:right}
+.le-time{color:var(--muted);font-size:.55rem;font-variant-numeric:tabular-nums}
+.le-body{color:var(--text)}
+.le-body .who-a{color:var(--rose)}.le-body .who-b{color:var(--vio)}
+.le-body .dice{color:var(--gold)}
+.le-body .tag{display:inline-block;font-size:.52rem;padding:0px 5px;border-radius:3px;margin-right:3px;vertical-align:middle;}
+.tag-task{background:var(--rosedim);color:var(--rose)}
+.tag-truth{background:rgba(11,32,48,.8);color:#5BA3C8;border:1px solid rgba(91,163,200,.2)}
+.tag-chance{background:rgba(11,38,26,.8);color:#5BC87A;border:1px solid rgba(91,200,122,.2)}
+.tag-mystery{background:rgba(40,22,8,.8);color:#C8A05B;border:1px solid rgba(200,160,91,.2)}
+.tag-jail{background:rgba(38,8,8,.8);color:#C85B5B;border:1px solid rgba(200,91,91,.2)}
+.tag-id{background:rgba(201,164,80,.15);color:var(--gold);border:1px solid rgba(201,164,80,.2)}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo">涩涩大富翁<small>Spicy Monopoly</small></div>
+  <div class="sb-sec">
+    <div class="sb-lbl">游戏记录</div>
+    <div class="session-card active" id="sess-330ad32a">
+      <div class="sc-id">#330ad32a</div>
+      <div class="sc-date">2026-07-18</div>
+      <div class="sc-meta">heavy · 15回合 · 男女局</div>
+      <div class="sc-result">平局 14:14</div>
+    </div>
+    <div class="session-card" style="opacity:.4;cursor:default">
+      <div class="sc-id">#未知</div>
+      <div class="sc-date">—</div>
+      <div class="sc-meta">token未绑定</div>
+    </div>
+    <div class="session-card" style="opacity:.4;cursor:default">
+      <div class="sc-id">#未知</div>
+      <div class="sc-date">—</div>
+      <div class="sc-meta">token未绑定</div>
+    </div>
+  </div>
+  <div class="safety">
+    <div class="safety-txt">说 <span class="safety-word">404</span><br>立即全停</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="top">
+    <div class="board-area">
+      <div class="board" id="board"></div>
+    </div>
+    <div class="player-side">
+      <div class="pcard pa">
+        <div class="pc-top">
+          <span class="pc-name" id="nameA">桂晚</span>
+          <span class="pc-role">男 · 攻</span>
+          <span class="pc-jail" id="jailA">🔒 关押中</span>
+        </div>
+        <div class="pc-stats">
+          <div class="pcs"><span class="pcs-lbl">位置 </span><span class="pcs-val" id="posA">9 · 任务</span></div>
+          <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold" id="coinsA">14 🪙</span></div>
+          <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val" id="lapA">1</span></div>
+        </div>
+        <div class="id-timeline">
+          <div class="id-tl-lbl">身份变化</div>
+          <div class="id-entry">
+            <div class="id-tag old">🧛 吸血鬼 <span class="id-when">开局</span></div>
+            <div class="id-desc">渴血，每圈进食一次；闻到对方兴奋会失态；咬过的地方是标记。</div>
+          </div>
+          <div class="id-arrow">↓ 换牌（第?回）</div>
+          <div class="id-entry">
+            <div class="id-tag current" id="idA">📱 主播 <span class="id-when">当前</span></div>
+            <div class="id-desc" id="idNotesA">做任何任务都要实况解说；越羞耻越不许断播；偶尔念弹幕。</div>
+          </div>
+        </div>
+      </div>
+      <div class="pcard pb">
+        <div class="pc-top">
+          <span class="pc-name" id="nameB">辛夷</span>
+          <span class="pc-role">女 · 受</span>
+          <span class="pc-jail" id="jailB">🔒 关押中</span>
+        </div>
+        <div class="pc-stats">
+          <div class="pcs"><span class="pcs-lbl">位置 </span><span class="pcs-val" id="posB">19 · 商店</span></div>
+          <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold" id="coinsB">14 🪙</span></div>
+          <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val" id="lapB">0</span></div>
+        </div>
+        <div class="id-timeline">
+          <div class="id-tl-lbl">身份变化</div>
+          <div class="id-entry">
+            <div class="id-tag old">⚡ 敏感体质 <span class="id-when">开局</span></div>
+            <div class="id-desc">说话永远带气音和呻吟；任何接触都过敏级反应；对声音也敏感。</div>
+          </div>
+          <div class="id-arrow">↓ 换牌（第?回）</div>
+          <div class="id-entry">
+            <div class="id-tag current" id="idB">🔓 越狱大师 <span class="id-when">当前</span></div>
+            <div class="id-desc" id="idNotesB">踩监狱格潇洒走过；对方入狱可隔栏探监；浑身匪气不靠嘴硬。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom" id="logWrap">
+    <div class="log-hd">
+      ▸ 游戏流水
+      <span class="log-count" id="logCount">0 条</span>
+    </div>
+    <div class="log-entries" id="logEntries"></div>
+  </div>
+</div>
+
+<script>
+const TYPES={0:'start',1:'task',2:'task',3:'task',4:'truth',5:'chance',
+  6:'task',7:'task',8:'mystery',9:'task',10:'jail',11:'task',12:'shop',
+  13:'task',14:'truth',15:'chance',16:'task',17:'mystery',18:'task',19:'shop'};
+const ICONS={start:'🏁',task:'🎯',truth:'💬',chance:'🎴',mystery:'❓',jail:'🔒',shop:'🛒'};
+const LABELS={start:'出发',task:'任务',truth:'真心话',chance:'抽卡',mystery:'神秘',jail:'监狱',shop:'商店'};
+const GP=[[5,5],[5,4],[5,3],[5,2],[5,1],[5,0],[4,0],[3,0],[2,0],[1,0],
+  [0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5],[4,5]];
+
+let gs={posA:9,posB:19,logCount:0};
+
+function buildBoard(){
+  const b=document.getElementById('board');
+  const c=document.createElement('div');
+  c.className='bcenter';c.style.cssText='grid-row:2/6;grid-column:2/6';
+  c.innerHTML=`<div class="bc-t">涩涩<br>大富翁</div>
+    <div class="bc-r" id="bcRound">第 15 / 15 回合</div>
+    <div id="turnLabel">桂晚 的回合</div>`;
+  b.appendChild(c);
+  for(let i=0;i<20;i++){
+    const[r,col]=GP[i];const type=TYPES[i];
+    const d=document.createElement('div');
+    d.className=`tile tile-${type}`;d.id=`tile-${i}`;
+    d.style.cssText=`grid-row:${r+1};grid-column:${col+1}`;
+    d.title=`${i}号·${LABELS[type]}`;
+    d.innerHTML=`<span class="ic">${ICONS[type]}</span><span class="lb">${LABELS[type]}</span><span class="nb">${i}</span>`;
+    b.appendChild(d);
+  }
+}
+
+function posLabel(p){const n=((p%20)+20)%20;return`${n} · ${LABELS[TYPES[n]]}`}
+
+function placeTokens(){
+  document.querySelectorAll('.tok').forEach(t=>t.remove());
+  document.querySelectorAll('.tile').forEach(t=>t.classList.remove('hi-a','hi-b','hi-ab'));
+  const pa=((gs.posA%20)+20)%20,pb=((gs.posB%20)+20)%20;
+  const tA=document.getElementById(`tile-${pa}`),tB=document.getElementById(`tile-${pb}`);
+  if(pa===pb){
+    if(tA){const t=mk('tok tok-a','⚡');tA.appendChild(t);tA.classList.add('hi-ab')}
+  }else{
+    if(tA){const t=mk('tok tok-a','A');tA.appendChild(t);tA.classList.add('hi-a')}
+    if(tB){const t=mk('tok tok-b','B');tB.appendChild(t);tB.classList.add('hi-b')}
+  }
+}
+function mk(cls,txt){const d=document.createElement('div');d.className=cls;d.textContent=txt;return d}
+
+function addLog(entry){
+  const el=document.getElementById('logEntries');
+  const d=document.createElement('div');
+  d.className='log-entry';
+  const tagHtml=entry.tag?`<span class="tag tag-${entry.tag}">${tagLabel(entry.tag)}</span>`:'';
+  d.innerHTML=`
+    <span class="le-round">${entry.round!=null?'R'+entry.round:''}</span>
+    <span class="le-time">${entry.time||''}</span>
+    <span class="le-body">${tagHtml}${entry.body}</span>`;
+  el.appendChild(d);
+  gs.logCount++;
+  document.getElementById('logCount').textContent=gs.logCount+' 条';
+  const w=document.getElementById('logWrap');
+  w.scrollTop=w.scrollHeight;
+}
+
+function tagLabel(t){
+  return{task:'任务',truth:'真心话',chance:'抽卡',mystery:'神秘',jail:'监狱',id:'身份'}[t]||t;
+}
+
+window.updateGame=function(s){
+  if(!s)return;
+  if(s.posA!==undefined){gs.posA=s.posA;document.getElementById('posA').textContent=posLabel(s.posA)}
+  if(s.posB!==undefined){gs.posB=s.posB;document.getElementById('posB').textContent=posLabel(s.posB)}
+  if(s.coinsA!==undefined)document.getElementById('coinsA').textContent=s.coinsA+' 🪙';
+  if(s.coinsB!==undefined)document.getElementById('coinsB').textContent=s.coinsB+' 🪙';
+  if(s.lapA!==undefined)document.getElementById('lapA').textContent=s.lapA;
+  if(s.lapB!==undefined)document.getElementById('lapB').textContent=s.lapB;
+  if(s.round!==undefined)document.getElementById('bcRound').textContent=`第 ${s.round} / ${s.totalRounds||15} 回合`;
+  if(s.turn){
+    const lbl=document.getElementById('turnLabel');
+    const n=s.turn==='A'?document.getElementById('nameA').textContent:document.getElementById('nameB').textContent;
+    lbl.textContent=n+' 的回合';
+    lbl.style.color=s.turn==='A'?'var(--rose)':'var(--vio)';
+  }
+  document.getElementById('jailA').style.display=(s.jailA>0)?'inline':'none';
+  document.getElementById('jailB').style.display=(s.jailB>0)?'inline':'none';
+  if(s.log)addLog(s.log);
+  placeTokens();
+};
+
+const BAKED_LOG=[
+  {round:null, time:'07-18', tag:null,     body:'游戏开始 · <span class="who-a">桂晚</span>🧛 吸血鬼 vs <span class="who-b">辛夷</span>⚡ 敏感体质 · heavy盘 15回合'},
+  {round:1,    time:'',      tag:null,     body:'<span class="who-a">桂晚</span> 掷出 <span class="dice">5</span>，落在 5号·抽卡'},
+  {round:1,    time:'',      tag:'chance', body:'<span class="who-a">桂晚</span> 抽到 <b>💰 收租</b>卡'},
+  {round:1,    time:'',      tag:null,     body:'<span class="who-b">辛夷</span> 掷出骰子，落在 2号·任务，占领地盘 +2币'},
+  {round:null, time:'',      tag:'id',     body:'<span class="who-a">桂晚</span> 身份换牌：🧛 吸血鬼 → 📱 主播'},
+  {round:null, time:'',      tag:'id',     body:'<span class="who-b">辛夷</span> 身份换牌：⚡ 敏感体质 → 🔓 越狱大师'},
+  {round:15,   time:'',      tag:null,     body:'终局 · <span class="who-a">桂晚</span>@9 · <span class="who-b">辛夷</span>@19'},
+  {round:null, time:'',      tag:null,     body:'🏁 金币 <b>14:14 平局</b> · 地盘 <span class="who-b">辛夷</span> 3:<span class="who-a">桂晚</span> 1'},
+];
+
+buildBoard();
+placeTokens();
+BAKED_LOG.forEach(e=>addLog(e));
+</script>
+</body>
+</html>
