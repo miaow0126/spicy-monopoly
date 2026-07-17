@@ -42,12 +42,15 @@ def api(path, **params):
 import urllib.parse
 
 def get_games():
-    r = api("/games", player_token=TOKEN)
+    r = api("/games", token=TOKEN)
     if not r: return []
-    return r.get("games", [])
+    games = r.get("games", [])
+    if isinstance(games, dict):
+        return games.get("items", [])
+    return games
 
 def get_state(game_id):
-    r = api(f"/game/{game_id}")
+    r = api(f"/state/{game_id}")
     if not r: return None
     return r
 
