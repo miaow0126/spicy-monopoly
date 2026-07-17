@@ -1,0 +1,38 @@
+services:
+  monopoly-api:
+    image: python:3.11-slim
+    container_name: monopoly-api
+    working_dir: /app
+    command: uvicorn monopoly_api:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./repo:/app                        # git clone 到这里
+      - ./data/games:/app/monopoly-games   # 对局存档
+      - ./data/seen:/app/monopoly-seen     # 玩家历史/去重
+    restart: always
+    networks:
+      - monopoly-net
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  monopoly-mcp:
+    image: node:20-slim
+    container_name: monopoly-mcp
+    working_dir: /app
+    command: node mcp-server.js --http
+    environment:
+      - SPICY_MONOPOLY_BASE_URL=http://monopoly-api:8000
+      - SPICY_MONOPOLY_MCP_TRANSPORT=http
+      - SPICY_MONOPOLY_MCP_HOST=0.0.0.0
+      - SPICY_MONOPOLY_MCP_PORT=3000
+    volumes:
+      - ./repo:/app
+    depends_on:
+      - monopoly-api
+    restart: always
+    networks:
+      - monopoly-net
+    ports:
+      - "127.0.0.1:3000:3000"
+
+networks:
+  monopoly-net:
