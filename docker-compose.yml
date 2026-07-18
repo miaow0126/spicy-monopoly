@@ -3,7 +3,8 @@ services:
     image: python:3.11-slim
     container_name: monopoly-api
     working_dir: /app
-    command: uvicorn monopoly_api:app --host 0.0.0.0 --port 8000
+    command: >
+      sh -c "pip install -q fastapi uvicorn && uvicorn monopoly_api:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./repo:/app                        # git clone 到这里
       - ./data/games:/app/monopoly-games   # 对局存档
