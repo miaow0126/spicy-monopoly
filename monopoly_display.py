@@ -487,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
 
         if p == "/api/games":
-            data = api("/games", token=TOKEN)
+            data = api("/games")
             self._json(data or {"games": []})
 
         elif p == "/api/log":

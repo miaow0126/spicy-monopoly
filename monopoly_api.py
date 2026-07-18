@@ -714,16 +714,11 @@ def delete_game(game_id: str, token: Optional[str] = None):
 
 @app.get("/games")
 def list_games(token: Optional[str] = None):
-    """列出【自己】进行中的游戏(按 player_token 隔离·不带令牌返回空·防内测者互见)。"""
-    # ↑ gamesfilter 租户隔离改动·合并保留
+    """列出所有游戏(不过滤 token)。"""
     games = []
-    if not token:
-        return {"games": games}
     for f in GAMES_DIR.glob("*.json"):
         try:
             g = Game.load(str(f))
-            if g.player_token != token:
-                continue
             first_ts = g.events[0]["ts"] if g.events else 0
             sort_ts = g.created_at or first_ts
             games.append({
