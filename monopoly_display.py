@@ -196,9 +196,13 @@ body{background:var(--bg);color:var(--text);
 .pcs-val{font-weight:600;font-variant-numeric:tabular-nums}
 .pcs-val.gold{color:var(--gold)}
 .id-box{border-top:1px solid var(--border);padding-top:6px;
-  font-size:.6rem;color:var(--muted);line-height:1.6}
-.id-name{font-size:.65rem;margin-bottom:2px}
-.pa .id-name{color:var(--rose)}.pb .id-name{color:var(--vio)}
+  font-size:.6rem;color:var(--muted);line-height:1.7}
+.id-hist-row{display:flex;align-items:baseline;gap:6px}
+.id-turn{font-size:.52rem;color:var(--muted);opacity:.55;min-width:24px;font-variant-numeric:tabular-nums}
+.id-hname{font-size:.6rem}
+.id-current .id-hname{font-size:.68rem;font-weight:600}
+.pa .id-current .id-hname{color:var(--rose)}.pb .id-current .id-hname{color:var(--vio)}
+.id-detail{font-size:.57rem;color:var(--muted);opacity:.8;padding-left:30px;line-height:1.5}
 
 .bottom{flex:1;overflow-y:auto;padding:0;display:flex;flex-direction:column;}
 .bottom::-webkit-scrollbar{width:4px}
@@ -344,8 +348,23 @@ function renderState(data){
     return{id,details};
   }
   const pA=parsePlayer(nameA), pB=parsePlayer(nameB);
+  const idHist=data.identity_history||{};
 
   const posLbl=p=>{const n=((p%20)+20)%20;return`${n} · ${LABELS[TYPES[n]]}`};
+
+  function renderIdBox(playerName, parsed){
+    const hist=(idHist[playerName]||[]);
+    if(!parsed.id&&!hist.length)return'';
+    // 历史列表（最旧→最新），当前身份加粗
+    const rows=hist.map((h,i)=>{
+      const isCurrent=(i===hist.length-1);
+      return`<div class="id-hist-row${isCurrent?' id-current':''}">
+        <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
+      </div>`;
+    }).join('');
+    const details=parsed.details.map(d=>`<div class="id-detail">${d.replace(/</g,'&lt;')}</div>`).join('');
+    return`<div class="id-box">${rows}${details}</div>`;
+  }
 
   document.getElementById('playerSide').innerHTML=`
     <div class="pcard pa">
@@ -355,10 +374,7 @@ function renderState(data){
         <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold">${coins[nameA]||0} 🪙</span></div>
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameA]||0}</span></div>
       </div>
-      ${pA.id?`<div class="id-box">
-        <div class="id-name">${pA.id}</div>
-        ${pA.details.map(d=>`<div>${d.replace(/</g,'&lt;')}</div>`).join('')}
-      </div>`:''}
+      ${renderIdBox(nameA,pA)}
     </div>
     <div class="pcard pb">
       <div class="pc-top"><span class="pc-name">${nameB}</span></div>
@@ -367,10 +383,7 @@ function renderState(data){
         <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold">${coins[nameB]||0} 🪙</span></div>
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameB]||0}</span></div>
       </div>
-      ${pB.id?`<div class="id-box">
-        <div class="id-name">${pB.id}</div>
-        ${pB.details.map(d=>`<div>${d.replace(/</g,'&lt;')}</div>`).join('')}
-      </div>`:''}
+      ${renderIdBox(nameB,pB)}
     </div>`;
 
   // 身份变化检测（status比较）
@@ -396,12 +409,12 @@ async function loadGames(){
   const games=d.games||[];
   const el=document.getElementById('gameList');
   if(!games.length){el.innerHTML='<div style="font-size:.6rem;color:var(--muted)">暂无对局</div>';return;}
-  el.innerHTML=[...games].reverse().map(g=>`
+  el.innerHTML=[...games].map(g=>`
     <div class="session-card ${currentGame===g.game_id?'active':''}"
       onclick="selectGame('${g.game_id}')">
       <div class="sc-id">#${g.game_id}</div>
       <div class="sc-players">${g.players||''}</div>
-      <div class="sc-meta">${g.flavor||''}</div>
+      <div class="sc-meta">${g.flavor||''}${g.created_at?'　'+new Date(g.created_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
       <div class="${g.status==='ended'?'sc-done':'sc-live'}">${g.status==='ended'?'已结束':'进行中'}</div>
     </div>`).join('');
   if(!currentGame&&games.length)selectGame(games[0].game_id);

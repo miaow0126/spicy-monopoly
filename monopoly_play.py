@@ -289,6 +289,8 @@ class Game:
         self.turn = p1_name
         self.history = set()
         self.events = []
+        self.created_at = int(time.time())
+        self.identity_history = {p1_name: [], p2_name: []}
         self._recent_types = []   # 最近抽过的玩法类型(治腻:别连出同种)
         self._recent_kinks = []   # 最近抽过的 kink(治「同一个 act 反复来」:如一局 3 次口交)
         self.pending_task = {}    # 谁踩了任务格、待结算的那张卡(做完按强度给币)
@@ -362,6 +364,9 @@ class Game:
         elif not _holder and who in self.mark_spot:
             self.mark_spot.pop(who, None); self.mark_found.pop(who, None)
         self.identity_since[who] = self.turn_count        # 记任期起点(机会格<3轮保护)
+        if who not in self.identity_history:
+            self.identity_history[who] = []
+        self.identity_history[who].append({"turn": self.turn_count, "name": self.identity[who].get("name", "无")})
 
     def reroll_identity(self, who):
         # 每人每局 1 次:抽到的身份实在演不下去可换一次(兔女郎条款)
@@ -1520,7 +1525,9 @@ class Game:
                  "extra_used": self._extra_used,
                  "declared_persona": self.declared_persona,
                  "final_settled": self._final_settled,
-                 "events": self.events}
+                 "events": self.events,
+                 "created_at": self.created_at,
+                 "identity_history": self.identity_history}
         _atomic_write(path, json.dumps(state, ensure_ascii=False, indent=2))
 
     @classmethod
@@ -1572,6 +1579,8 @@ class Game:
         g.declared_persona = s.get("declared_persona", {})
         g._final_settled = s.get("final_settled", False)
         g.events = s.get("events", [])
+        g.created_at = s.get("created_at", 0)
+        g.identity_history = s.get("identity_history", {})
         return g
 
 

@@ -673,6 +673,7 @@ def state(game_id: str):
         "coins": g.coins,
         "laps": g.lap,
         "events": g.events,
+        "identity_history": g.identity_history,
     }
 
 
@@ -727,9 +728,11 @@ def list_games(token: Optional[str] = None):
                 "players": f"{g.p1} vs {g.p2}",
                 "turn": g.turn,
                 "flavor": g.flavor,
+                "created_at": g.created_at,
             })
         except Exception:
             pass
+    games.sort(key=lambda x: x["created_at"], reverse=True)
     return {"games": games}
 
 
