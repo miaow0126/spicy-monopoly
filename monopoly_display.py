@@ -10,12 +10,18 @@
   PORT               监听端口（默认 8896）
 """
 
-import os, json, urllib.request, urllib.error
+import os, json, urllib.request, urllib.error, time
+from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-API_URL = os.environ.get("MONOPOLY_API_URL", "http://127.0.0.1:8000").rstrip("/")
-TOKEN   = os.environ.get("MONOPOLY_TOKEN", "guiwan")
-PORT    = int(os.environ.get("PORT", 8896))
+API_URL  = os.environ.get("MONOPOLY_API_URL", "http://127.0.0.1:8000").rstrip("/")
+TOKEN    = os.environ.get("MONOPOLY_TOKEN", "guiwan")
+PORT     = int(os.environ.get("PORT", 8896))
+LOG_DIR  = Path(os.environ.get("LOG_DIR", "/root/monopoly/data/logs"))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# 内存缓存：{game_id: last_status_str}
+_last_status: dict = {}
 
 TILE_TYPES = {
     0:"start",1:"task",2:"task",3:"task",4:"truth",5:"chance",
@@ -52,7 +58,26 @@ def get_games():
 def get_state(game_id):
     r = api(f"/state/{game_id}")
     if not r: return None
+    _record_status(game_id, r.get("status", ""))
     return r
+
+def _record_status(game_id: str, status: str):
+    if not status: return
+    if _last_status.get(game_id) == status: return
+    _last_status[game_id] = status
+    ts = int(time.time())
+    entry = json.dumps({"ts": ts, "status": status}, ensure_ascii=False)
+    with open(LOG_DIR / f"{game_id}.jsonl", "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
+def get_log(game_id: str) -> list:
+    path = LOG_DIR / f"{game_id}.jsonl"
+    if not path.exists(): return []
+    entries = []
+    for line in path.read_text("utf-8").splitlines():
+        try: entries.append(json.loads(line))
+        except Exception: pass
+    return entries
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="zh">
@@ -185,8 +210,15 @@ body{background:var(--bg);color:var(--text);
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:8px;
 }
-.log-raw{padding:10px 16px 20px;font-size:.65rem;color:var(--muted);
-  line-height:1.8;white-space:pre-wrap;word-break:break-all;}
+.log-table{padding:10px 16px 20px;font-size:.65rem;color:var(--muted);
+  display:table;width:100%;border-collapse:collapse;}
+.log-row{display:table-row}
+.log-row+.log-row .log-time{padding-top:10px}
+.log-row+.log-row .log-content{padding-top:10px}
+.log-time{display:table-cell;white-space:nowrap;padding-right:16px;
+  vertical-align:top;color:var(--rose);opacity:.6;
+  font-variant-numeric:tabular-nums;font-size:.6rem;padding-top:1px;width:60px}
+.log-content{display:table-cell;white-space:pre-wrap;word-break:break-all;line-height:1.8}
 .refresh-dot{width:6px;height:6px;border-radius:50%;
   background:#5BC87A;display:inline-block;margin-right:4px;
   animation:pulse 2s infinite}
@@ -220,7 +252,7 @@ body{background:var(--bg);color:var(--text);
       ▸ 游戏状态
       <span id="lastUpdate" style="margin-left:auto;font-size:.5rem"></span>
     </div>
-    <div class="log-raw" id="logRaw">—</div>
+    <div class="log-table" id="logTable"></div>
   </div>
 </div>
 
@@ -234,6 +266,7 @@ const GP=[[5,5],[5,4],[5,3],[5,2],[5,1],[5,0],[4,0],[3,0],[2,0],[1,0],
   [0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5],[4,5]];
 
 let currentGame=null;
+let lastStatus='';
 
 function buildBoard(){
   const b=document.getElementById('board');
@@ -319,8 +352,11 @@ function renderState(data){
       ${idB?`<div class="id-box"><div class="id-name">${idB}</div></div>`:''}
     </div>`;
 
-  document.getElementById('logRaw').textContent=status;
-  document.getElementById('lastUpdate').textContent='更新于 '+new Date().toLocaleTimeString('zh');
+  if(status && status!==lastStatus){
+    lastStatus=status;
+    appendLogRow(Date.now()/1000, status);
+  }
+  document.getElementById('lastUpdate').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai'});
 }
 
 async function loadGames(){
@@ -341,11 +377,32 @@ async function loadGames(){
   if(!currentGame&&games.length)selectGame(games[0].game_id);
 }
 
+function appendLogRow(ts, status){
+  const tbl=document.getElementById('logTable');
+  const d=new Date(ts*1000);
+  const t=d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Shanghai'});
+  const row=document.createElement('div');
+  row.className='log-row';
+  row.innerHTML=`<div class="log-time">${t}</div><div class="log-content">${status.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`;
+  tbl.appendChild(row);
+  const wrap=document.getElementById('logWrap');
+  wrap.scrollTop=wrap.scrollHeight;
+}
+
 async function selectGame(id){
   currentGame=id;
+  lastStatus='';
+  document.getElementById('logTable').innerHTML='';
   document.querySelectorAll('.session-card').forEach(c=>{
     c.classList.toggle('active',c.querySelector('.sc-id')?.textContent==='#'+id);
   });
+  // 先加载历史日志
+  const lr=await fetch('/api/log?game_id='+id);
+  if(lr.ok){
+    const ld=await lr.json();
+    (ld.log||[]).forEach(e=>appendLogRow(e.ts, e.status));
+    if(ld.log&&ld.log.length) lastStatus=ld.log[ld.log.length-1].status;
+  }
   await refreshState();
 }
 
@@ -371,8 +428,13 @@ class Handler(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
 
         if p == "/api/games":
-            data = api("/games", player_token=TOKEN)
+            data = api("/games", token=TOKEN)
             self._json(data or {"games": []})
+
+        elif p == "/api/log":
+            qs = dict(urllib.parse.parse_qsl(self.path.partition("?")[2]))
+            gid = qs.get("game_id", "")
+            self._json({"log": get_log(gid) if gid else []})
 
         elif p == "/api/state":
             qs = dict(urllib.parse.parse_qsl(self.path.partition("?")[2]))
