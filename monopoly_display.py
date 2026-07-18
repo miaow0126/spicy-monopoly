@@ -372,8 +372,7 @@ function renderState(data){
     }else{
       rows=parsed.id?`<div class="id-hist-row id-current"><span class="id-hname">${parsed.id}</span></div>`:'';
     }
-    const details=parsed.details.map(d=>`<div class="id-detail">${d.replace(/</g,'&lt;')}</div>`).join('');
-    return`<div class="id-box">${rows}${details}</div>`;
+    return`<div class="id-box">${rows}</div>`;
   }
 
   function renderHand(playerName){
