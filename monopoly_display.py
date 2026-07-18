@@ -356,12 +356,17 @@ function renderState(data){
     const hist=(idHist[playerName]||[]);
     if(!parsed.id&&!hist.length)return'';
     // 历史列表（最旧→最新），当前身份加粗
-    const rows=hist.map((h,i)=>{
-      const isCurrent=(i===hist.length-1);
-      return`<div class="id-hist-row${isCurrent?' id-current':''}">
-        <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
-      </div>`;
-    }).join('');
+    let rows;
+    if(hist.length){
+      rows=hist.map((h,i)=>{
+        const isCurrent=(i===hist.length-1);
+        return`<div class="id-hist-row${isCurrent?' id-current':''}">
+          <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
+        </div>`;
+      }).join('');
+    }else{
+      rows=parsed.id?`<div class="id-hist-row id-current"><span class="id-hname">${parsed.id}</span></div>`:'';
+    }
     const details=parsed.details.map(d=>`<div class="id-detail">${d.replace(/</g,'&lt;')}</div>`).join('');
     return`<div class="id-box">${rows}${details}</div>`;
   }
@@ -414,7 +419,7 @@ async function loadGames(){
       onclick="selectGame('${g.game_id}')">
       <div class="sc-id">#${g.game_id}</div>
       <div class="sc-players">${g.players||''}</div>
-      <div class="sc-meta">${g.flavor||''}${g.created_at?'　'+new Date(g.created_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
+      <div class="sc-meta">${g.flavor||''}${(g.created_at||g.first_event_ts)?'　'+new Date((g.created_at||g.first_event_ts)*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
       <div class="${g.status==='ended'?'sc-done':'sc-live'}">${g.status==='ended'?'已结束':'进行中'}</div>
     </div>`).join('');
   if(!currentGame&&games.length)selectGame(games[0].game_id);

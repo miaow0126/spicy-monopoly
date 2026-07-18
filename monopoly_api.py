@@ -723,16 +723,18 @@ def list_games(token: Optional[str] = None):
             g = Game.load(str(f))
             if g.player_token != token:
                 continue
+            first_ts = g.events[0]["ts"] if g.events else 0
             games.append({
                 "game_id": f.stem,
                 "players": f"{g.p1} vs {g.p2}",
                 "turn": g.turn,
                 "flavor": g.flavor,
                 "created_at": g.created_at,
+                "first_event_ts": first_ts,
             })
         except Exception:
             pass
-    games.sort(key=lambda x: x["created_at"], reverse=True)
+    games.sort(key=lambda x: x["created_at"] or x["first_event_ts"], reverse=True)
     return {"games": games}
 
 
