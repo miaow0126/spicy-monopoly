@@ -366,7 +366,12 @@ class Game:
         self.identity_since[who] = self.turn_count        # 记任期起点(机会格<3轮保护)
         if who not in self.identity_history:
             self.identity_history[who] = []
-        self.identity_history[who].append({"turn": self.turn_count, "name": self.identity[who].get("name", "无")})
+        ident = self.identity[who]
+        self.identity_history[who].append({
+            "turn": self.turn_count,
+            "name": ident.get("name", "无"),
+            "persona": ident.get("persona", [ident.get("behavior", "")]),
+        })
 
     def reroll_identity(self, who):
         # 每人每局 1 次:抽到的身份实在演不下去可换一次(兔女郎条款)

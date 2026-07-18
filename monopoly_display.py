@@ -199,8 +199,7 @@ body{background:var(--bg);color:var(--text);
   font-size:.6rem;color:var(--muted);line-height:1.7}
 .id-hist-row{display:flex;align-items:baseline;gap:6px}
 .id-turn{font-size:.52rem;color:var(--muted);min-width:24px;font-variant-numeric:tabular-nums}
-.id-hname{font-size:.6rem;color:var(--text);opacity:.5}
-.id-past .id-hname{text-decoration:line-through;opacity:.35}
+.id-hname{font-size:.6rem;color:var(--text);opacity:.55}
 .id-current .id-hname{font-size:.68rem;font-weight:600;opacity:1}
 .pa .id-current .id-hname{color:var(--rose)}.pb .id-current .id-hname{color:var(--vio)}
 .id-detail{font-size:.57rem;color:var(--muted);opacity:.8;padding-left:30px;line-height:1.5}
@@ -365,10 +364,10 @@ function renderState(data){
     if(hist.length){
       rows=hist.map((h,i)=>{
         const isCurrent=(i===hist.length-1);
-        const cls=isCurrent?'id-current':'id-past';
-        return`<div class="id-hist-row ${cls}">
+        const personas=(h.persona||[]).filter(p=>p).map(p=>`<div class="id-detail">${p.replace(/</g,'&lt;')}</div>`).join('');
+        return`<div class="id-hist-row${isCurrent?' id-current':''}">
           <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
-        </div>`;
+        </div>${personas}`;
       }).join('');
     }else{
       rows=parsed.id?`<div class="id-hist-row id-current"><span class="id-hname">${parsed.id}</span></div>`:'';
