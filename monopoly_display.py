@@ -396,7 +396,7 @@ async function loadGames(){
   const games=d.games||[];
   const el=document.getElementById('gameList');
   if(!games.length){el.innerHTML='<div style="font-size:.6rem;color:var(--muted)">暂无对局</div>';return;}
-  el.innerHTML=games.map(g=>`
+  el.innerHTML=[...games].reverse().map(g=>`
     <div class="session-card ${currentGame===g.game_id?'active':''}"
       onclick="selectGame('${g.game_id}')">
       <div class="sc-id">#${g.game_id}</div>
