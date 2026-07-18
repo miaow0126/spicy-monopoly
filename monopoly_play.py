@@ -25,7 +25,7 @@
 也可直接传 tag 子串。任何人喊 "404" 立刻全停。
 ═══════════════════════════════════════════════════
 """
-import json, random, re
+import json, random, re, time
 from pathlib import Path
 
 # 中性「穴」词(裸穴/骚穴/后穴/穴口=中性任意):长男人身上=后庭·长女人身上=阴道。
@@ -288,6 +288,7 @@ class Game:
         self.lap = {p1_name: 0, p2_name: 0}
         self.turn = p1_name
         self.history = set()
+        self.events = []
         self._recent_types = []   # 最近抽过的玩法类型(治腻:别连出同种)
         self._recent_kinks = []   # 最近抽过的 kink(治「同一个 act 反复来」:如一局 3 次口交)
         self.pending_task = {}    # 谁踩了任务格、待结算的那张卡(做完按强度给币)
@@ -1185,6 +1186,16 @@ class Game:
             out["say"] += f"　🏁路过起点+2币(现{self.coins[who]})"
         out["say"] += gamble_note + swap_note   # 🎰赌徒押注结果 + 机会格主动换身份提示 拼在这轮 say 末尾
         out["board"] = self.board_art()
+        self.events.append({
+            "ts": int(time.time()),
+            "turn": self.turn_count,
+            "who": who,
+            "dice": d,
+            "say": out.get("say", ""),
+            "task": out["task"].get("内容") if out.get("task") else None,
+            "task_strength": out["task"].get("强度") if out.get("task") else None,
+            "truth": out["truth"].get("内容") if out.get("truth") else None,
+        })
         return out
 
     @staticmethod
@@ -1508,7 +1519,8 @@ class Game:
                  "id_events_used": list(self._id_events_used),
                  "extra_used": self._extra_used,
                  "declared_persona": self.declared_persona,
-                 "final_settled": self._final_settled}
+                 "final_settled": self._final_settled,
+                 "events": self.events}
         _atomic_write(path, json.dumps(state, ensure_ascii=False, indent=2))
 
     @classmethod
@@ -1559,6 +1571,7 @@ class Game:
         g._extra_used = s.get("extra_used", {g.p1: 0, g.p2: 0})
         g.declared_persona = s.get("declared_persona", {})
         g._final_settled = s.get("final_settled", False)
+        g.events = s.get("events", [])
         return g
 
 

@@ -267,6 +267,7 @@ const GP=[[5,5],[5,4],[5,3],[5,2],[5,1],[5,0],[4,0],[3,0],[2,0],[1,0],
 
 let currentGame=null;
 let lastStatus='';
+let shownEvents=0;
 
 function buildBoard(){
   const b=document.getElementById('board');
@@ -323,39 +324,68 @@ function renderState(data){
 
   // parse status for identity
   const status=data.status||'';
-  const idA=status.match(new RegExp(nameA+'[^:]*身份:([^\n:]+)'))?.[1]?.trim()||'';
-  const idB=status.match(new RegExp(nameB+'[^:]*身份:([^\n:]+)'))?.[1]?.trim()||'';
+
+  // 解析每个玩家的身份名和详情行
+  function parsePlayer(name){
+    const lines=status.split('\n');
+    let headerIdx=-1;
+    for(let i=0;i<lines.length;i++){
+      if(lines[i].includes(name)&&lines[i].includes('身份:')){headerIdx=i;break;}
+    }
+    if(headerIdx<0)return{id:'',details:[]};
+    const idM=lines[headerIdx].match(/身份:([^\n:]+)/);
+    const id=idM?idM[1].trim():'';
+    const details=[];
+    for(let i=headerIdx+1;i<lines.length;i++){
+      if(lines[i].startsWith('  └')||lines[i].startsWith('  └')||lines[i].trimStart().startsWith('└'))
+        details.push(lines[i].replace(/^\s*└\s*/,''));
+      else break;
+    }
+    return{id,details};
+  }
+  const pA=parsePlayer(nameA), pB=parsePlayer(nameB);
 
   const posLbl=p=>{const n=((p%20)+20)%20;return`${n} · ${LABELS[TYPES[n]]}`};
 
   document.getElementById('playerSide').innerHTML=`
     <div class="pcard pa">
-      <div class="pc-top">
-        <span class="pc-name">${nameA}</span>
-      </div>
+      <div class="pc-top"><span class="pc-name">${nameA}</span></div>
       <div class="pc-stats">
         <div class="pcs"><span class="pcs-lbl">位置 </span><span class="pcs-val">${posLbl(posA)}</span></div>
         <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold">${coins[nameA]||0} 🪙</span></div>
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameA]||0}</span></div>
       </div>
-      ${idA?`<div class="id-box"><div class="id-name">${idA}</div></div>`:''}
+      ${pA.id?`<div class="id-box">
+        <div class="id-name">${pA.id}</div>
+        ${pA.details.map(d=>`<div>${d.replace(/</g,'&lt;')}</div>`).join('')}
+      </div>`:''}
     </div>
     <div class="pcard pb">
-      <div class="pc-top">
-        <span class="pc-name">${nameB}</span>
-      </div>
+      <div class="pc-top"><span class="pc-name">${nameB}</span></div>
       <div class="pc-stats">
         <div class="pcs"><span class="pcs-lbl">位置 </span><span class="pcs-val">${posLbl(posB)}</span></div>
         <div class="pcs"><span class="pcs-lbl">金币 </span><span class="pcs-val gold">${coins[nameB]||0} 🪙</span></div>
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameB]||0}</span></div>
       </div>
-      ${idB?`<div class="id-box"><div class="id-name">${idB}</div></div>`:''}
+      ${pB.id?`<div class="id-box">
+        <div class="id-name">${pB.id}</div>
+        ${pB.details.map(d=>`<div>${d.replace(/</g,'&lt;')}</div>`).join('')}
+      </div>`:''}
     </div>`;
 
+  // 身份变化检测（status比较）
   if(status && status!==lastStatus){
     lastStatus=status;
-    appendLogRow(Date.now()/1000, status);
   }
+  // events流水账
+  const events=data.events||[];
+  events.slice(shownEvents).forEach(e=>{
+    let line=e.say||'';
+    if(e.task) line+='\n　📋 '+e.task+(e.task_strength?' ('+e.task_strength+')':'');
+    if(e.truth) line+='\n　💬 '+e.truth;
+    appendLogRow(e.ts, line);
+  });
+  shownEvents=events.length;
   document.getElementById('lastUpdate').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai'});
 }
 
@@ -392,17 +422,11 @@ function appendLogRow(ts, status){
 async function selectGame(id){
   currentGame=id;
   lastStatus='';
+  shownEvents=0;
   document.getElementById('logTable').innerHTML='';
   document.querySelectorAll('.session-card').forEach(c=>{
     c.classList.toggle('active',c.querySelector('.sc-id')?.textContent==='#'+id);
   });
-  // 先加载历史日志
-  const lr=await fetch('/api/log?game_id='+id);
-  if(lr.ok){
-    const ld=await lr.json();
-    (ld.log||[]).forEach(e=>appendLogRow(e.ts, e.status));
-    if(ld.log&&ld.log.length) lastStatus=ld.log[ld.log.length-1].status;
-  }
   await refreshState();
 }
 

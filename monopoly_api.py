@@ -672,6 +672,7 @@ def state(game_id: str):
         "positions": g.pos,
         "coins": g.coins,
         "laps": g.lap,
+        "events": g.events,
     }
 
 
