@@ -674,6 +674,7 @@ def state(game_id: str):
         "laps": g.lap,
         "events": g.events,
         "identity_history": g.identity_history,
+        "hand": g.hand,
     }
 
 
@@ -724,17 +725,18 @@ def list_games(token: Optional[str] = None):
             if g.player_token != token:
                 continue
             first_ts = g.events[0]["ts"] if g.events else 0
+            sort_ts = g.created_at or first_ts
             games.append({
                 "game_id": f.stem,
                 "players": f"{g.p1} vs {g.p2}",
                 "turn": g.turn,
                 "flavor": g.flavor,
-                "created_at": g.created_at,
+                "sort_ts": sort_ts,
                 "first_event_ts": first_ts,
             })
         except Exception:
             pass
-    games.sort(key=lambda x: x["created_at"] or x["first_event_ts"], reverse=True)
+    games.sort(key=lambda x: x["sort_ts"], reverse=True)
     return {"games": games}
 
 

@@ -198,11 +198,15 @@ body{background:var(--bg);color:var(--text);
 .id-box{border-top:1px solid var(--border);padding-top:6px;
   font-size:.6rem;color:var(--muted);line-height:1.7}
 .id-hist-row{display:flex;align-items:baseline;gap:6px}
-.id-turn{font-size:.52rem;color:var(--muted);opacity:.55;min-width:24px;font-variant-numeric:tabular-nums}
-.id-hname{font-size:.6rem}
-.id-current .id-hname{font-size:.68rem;font-weight:600}
+.id-turn{font-size:.52rem;color:var(--muted);min-width:24px;font-variant-numeric:tabular-nums}
+.id-hname{font-size:.6rem;color:var(--text);opacity:.5}
+.id-past .id-hname{text-decoration:line-through;opacity:.35}
+.id-current .id-hname{font-size:.68rem;font-weight:600;opacity:1}
 .pa .id-current .id-hname{color:var(--rose)}.pb .id-current .id-hname{color:var(--vio)}
 .id-detail{font-size:.57rem;color:var(--muted);opacity:.8;padding-left:30px;line-height:1.5}
+.hand-box{border-top:1px solid var(--border);padding-top:5px;margin-top:2px}
+.hand-lbl{font-size:.5rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:3px}
+.hand-card{font-size:.58rem;color:var(--gold);padding:1px 0}
 
 .bottom{flex:1;overflow-y:auto;padding:0;display:flex;flex-direction:column;}
 .bottom::-webkit-scrollbar{width:4px}
@@ -349,6 +353,7 @@ function renderState(data){
   }
   const pA=parsePlayer(nameA), pB=parsePlayer(nameB);
   const idHist=data.identity_history||{};
+  const handData=data.hand||{};
 
   const posLbl=p=>{const n=((p%20)+20)%20;return`${n} · ${LABELS[TYPES[n]]}`};
 
@@ -360,7 +365,8 @@ function renderState(data){
     if(hist.length){
       rows=hist.map((h,i)=>{
         const isCurrent=(i===hist.length-1);
-        return`<div class="id-hist-row${isCurrent?' id-current':''}">
+        const cls=isCurrent?'id-current':'id-past';
+        return`<div class="id-hist-row ${cls}">
           <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
         </div>`;
       }).join('');
@@ -369,6 +375,15 @@ function renderState(data){
     }
     const details=parsed.details.map(d=>`<div class="id-detail">${d.replace(/</g,'&lt;')}</div>`).join('');
     return`<div class="id-box">${rows}${details}</div>`;
+  }
+
+  function renderHand(playerName){
+    const cards=(handData[playerName]||[]);
+    if(!cards.length)return'';
+    return`<div class="hand-box">
+      <div class="hand-lbl">手牌</div>
+      ${cards.map(c=>`<div class="hand-card">${c.name||c}</div>`).join('')}
+    </div>`;
   }
 
   document.getElementById('playerSide').innerHTML=`
@@ -380,6 +395,7 @@ function renderState(data){
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameA]||0}</span></div>
       </div>
       ${renderIdBox(nameA,pA)}
+      ${renderHand(nameA)}
     </div>
     <div class="pcard pb">
       <div class="pc-top"><span class="pc-name">${nameB}</span></div>
@@ -389,6 +405,7 @@ function renderState(data){
         <div class="pcs"><span class="pcs-lbl">圈数 </span><span class="pcs-val">${laps[nameB]||0}</span></div>
       </div>
       ${renderIdBox(nameB,pB)}
+      ${renderHand(nameB)}
     </div>`;
 
   // 身份变化检测（status比较）
@@ -419,7 +436,7 @@ async function loadGames(){
       onclick="selectGame('${g.game_id}')">
       <div class="sc-id">#${g.game_id}</div>
       <div class="sc-players">${g.players||''}</div>
-      <div class="sc-meta">${g.flavor||''}${(g.created_at||g.first_event_ts)?'　'+new Date((g.created_at||g.first_event_ts)*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
+      <div class="sc-meta">${g.flavor||''}${g.sort_ts?'　'+new Date(g.sort_ts*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):g.first_event_ts?'　'+new Date(g.first_event_ts*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
       <div class="${g.status==='ended'?'sc-done':'sc-live'}">${g.status==='ended'?'已结束':'进行中'}</div>
     </div>`).join('');
   if(!currentGame&&games.length)selectGame(games[0].game_id);
