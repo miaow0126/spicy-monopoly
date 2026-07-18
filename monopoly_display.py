@@ -364,7 +364,9 @@ function renderState(data){
     if(hist.length){
       rows=hist.map((h,i)=>{
         const isCurrent=(i===hist.length-1);
-        const personas=(h.persona||[]).filter(p=>p).map(p=>`<div class="id-detail">${p.replace(/</g,'&lt;')}</div>`).join('');
+        let pList=(h.persona||[]).filter(p=>p);
+        if(!pList.length&&isCurrent)pList=parsed.details||[];
+        const personas=pList.map(p=>`<div class="id-detail">${p.replace(/</g,'&lt;')}</div>`).join('');
         return`<div class="id-hist-row${isCurrent?' id-current':''}">
           <span class="id-turn">R${h.turn}</span><span class="id-hname">${h.name}</span>
         </div>${personas}`;
